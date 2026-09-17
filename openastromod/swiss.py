@@ -64,8 +64,13 @@ class ephData:
 		self.planets_sign = list(range(len(planets)))
 		self.planets_degree = list(range(len(planets)))
 		self.planets_degree_ut = list(range(len(planets)))
+		self.planets_latitude = [0.0] * len(planets)
 		self.planets_info_string = list(range(len(planets)))
 		self.planets_retrograde = list(range(len(planets)))
+		#birth moment JD (before any houses_override rewrite below) and RAMC,
+		#needed for topocentric primary directions (openastromod.primary)
+		self.jd_ut = self.jul_day_UT
+		self.ramc = 0.0
 		
 		#iflag
 		"""
@@ -113,6 +118,7 @@ class ephData:
 						self.planets_sign[i]=x
 						self.planets_degree[i] = ret_flag[0][0] - deg_low
 						self.planets_degree_ut[i] = ret_flag[0][0]
+						self.planets_latitude[i] = ret_flag[0][1]
 						#if latitude speed is negative, there is retrograde
 						#if ret_flag[3] < 0:						
 						if ret_flag[0][3] < 0:						
@@ -156,6 +162,17 @@ class ephData:
 			sh = swe.houses(self.jul_day_UT,geolat,geolon,openastrocfg['houses_system'].encode("ascii"))
 
 		self.houses_degree_ut = list(sh[0])
+
+		#RAMC (right ascension of the MC, ascmc[2]) for primary directions.
+		#Falls back to sidereal time + east longitude if the houses tuple
+		#has an unexpected shape in some pyswisseph versions.
+		try:
+			self.ramc = float(sh[1][2]) % 360.0
+		except Exception:
+			try:
+				self.ramc = (swe.sidtime(self.jul_day_UT) * 15.0 + geolon) % 360.0
+			except Exception:
+				self.ramc = 0.0
 
 		#arabic parts
 		sun,moon,asc = self.planets_degree_ut[0],self.planets_degree_ut[1],self.houses_degree_ut[0]
