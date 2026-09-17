@@ -720,3 +720,59 @@ of crashing.
   menu entry
 - `openastromod/swiss.py` — `calc_dodecatemoria`, dodecatemoria attributes
 - `openastro-ui.xml` — reference menu entry (file kept for reference only)
+
+---
+
+## Feature: Primary Directions chart — 2026-09-17
+
+### Change
+- New **Chart Type → Primary Directions**: a **bi-wheel** with the radix on
+  the inside and the **topocentric primary-direction positions** (Polich-Page)
+  for the requested date on the outside (reusing the transit ring). The
+  **Chart View** submenu applies as usual: **Both**, **Inner only** (radix)
+  and **Outer only** (directed chart alone, with directed houses).
+- The dialog asks the target date, the **time key**: Naibod
+  (0.9856473663°/year, default), Ptolemy (1°/year) or solar arc in RA — the
+  **direction**: direct or converse (negated arc, towards the past) — and the
+  **measure**, following the three chart kinds of
+  carta-natal.es/direcciones-primarias.php: ecliptic directed / natal
+  ecliptic, i.e. Marr-directed ecliptic longitudes with zodiacal aspects
+  (the default); ascensional directed / natal ascensional, i.e. both wheels
+  rendered in oblique-ascension space with an equal OA-frame and aspects on
+  OA differences; or ascensional directed / natal ecliptic, i.e. the natal
+  ecliptic wheel with the directed positions overlaid.
+- Directed are the visible bodies and the cusps, each under its own
+  topocentric pole; natal aspects/orbs config applies to the drawing as usual.
+- The "Directed to Natal" list shows, per contact, the directed body, the
+  aspect glyph, the natal body, and the ARC orb in DMS (exact perfection
+  arc minus elapsed arc, both aspect rays tried) with applicative (green
+  +/A) vs separative (red −/S) — rectificacion report style — sorted
+  tightest-orb first.
+
+### How it works
+- `openastromod/primary.py` — port of the verified `primary_directions.py
+  ` engine (15/16 Starkman directions within 2'): oblique ascension under the
+  significator's topocentric pole, arc added on the equator, Marr's Ascendant
+  formula back to the ecliptic. Only stdlib + swisseph.
+- `openastromod/swiss.py` — `ephData` now also stores ecliptic latitudes,
+  the RAMC (`ascmc[2]`, sidereal-time fallback) and the birth JD.
+- `openastro.localToDirected()` derives the outer wheel from the radix into
+  `t_*` and sets `type="Transit"`, `solar_active=True`,
+  `biwheel_single="Directed"`. `makeSVG()` re-derives `t_*` from the stored
+  arc on every redraw (the `Transit` branch rewrites `t_*` from `t_year`);
+  new `type == "Directed"` branch renders the single-wheel "Outer only" view.
+  In ascensional measure both wheels render in OA space (`oa_positions()`,
+  equal OA-frame houses, aspects on OA differences); the ecliptic measures
+  render Marr-directed ecliptic longitudes (`direct_frame()`).
+- `specialDirected()` dialog (date, time key, direct/converse, measure;
+  last used values remembered in `astrocfg`) + Special-menu entry;
+  `solarView()` needed no changes (it already dispatches through
+  `biwheel_single`).
+
+### Files changed
+- `openastro` — `localToDirected`, `specialDirected`/`specialDirectedSubmit`,
+  the `Directed` branch and outer-wheel override in `makeSVG`, directed
+  frame grab, Special menu entry
+- `openastromod/primary.py` — new engine module
+- `openastromod/swiss.py` — latitudes, RAMC, birth JD
+- `openastro-ui.xml` — reference menu entry (file kept for reference only)
