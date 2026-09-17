@@ -53,7 +53,7 @@ from gi.repository import Gtk, Gdk, GLib, GObject, Rsvg, cairo
 #internal openastro modules
 sys.path.append("/usr/lib/python3.5/dist-packages") #trying to 'fix' some problems importing openastromod on some distros
 sys.path.append("/usr/lib/python3.5/site-packages") #trying to 'fix' some problems importing openastromod on some distros
-from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris
+from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine
 
 def _rsvg_render(handle, cr):
     """Render a whole SVG handle at its natural size onto a Cairo context,
@@ -1266,11 +1266,12 @@ class openAstroInstance:
         self.zoom=1
         self.type="Radix"
         #bi-wheel state for Chart View (Both / Inner only / Outer only):
-        #Solar Return, Secondary Progressions, Transit Chart, Synastry and
-        #Dodecatemoria are shown as bi-wheels (natal inside, derived chart
-        #outside in t_*) while solar_active is True; biwheel_single tells "Outer only"
-        #which single-wheel type to render ("Solar",
-        #"SecondaryProgression", "Dodecatemoria" or "TransitOuter")
+        #Solar Return, Secondary Progressions, Transit Chart, Synastry,
+        #Dodecatemoria and Primary Directions are shown as bi-wheels (natal
+        #inside, derived chart outside in t_*) while solar_active is True;
+        #biwheel_single tells "Outer only" which single-wheel type to render
+        #("Solar", "SecondaryProgression", "Dodecatemoria", "Directed"
+        #or "TransitOuter")
         self.solar_active=False
         self.biwheel_single="Solar"
         
@@ -1441,6 +1442,75 @@ class openAstroInstance:
         openAstro.charttype="%s (%s)" % (_("Dodecatemoria"), openAstro.name)
         openAstro.transit=True
         return
+
+    def localToDirected(self, dt, key="naibod", converse=False, measure="ecl_ecl"):
+        #Direcciones primarias topocentricas (sistema Polich-Page, motor
+        #openastromod.primary) como rueda exterior: el radix se mantiene en
+        #self.* (rueda interior) y las posiciones dirigidas por el arco que
+        #corresponde a la fecha pedida se copian en self.t_* (rueda exterior),
+        #reutilizando el anillo de transitos. Se dirigen los cuerpos visibles
+        #y las cuspides, cada uno bajo su propio polo topocentrico.
+        #converse=True niega el arco (direcciones conversas, hacia el pasado).
+        #measure: ecl_ecl (carta ecliptica), asc_asc (carta ascensional) o
+        #asc_ecl (mixta: rueda natal ecliptica con primarias superpuestas).
+        if key not in primary_engine.TIME_KEYS:
+            key = "naibod"
+        if measure not in primary_engine.MEASURE_KEYS:
+            measure = "ecl_ecl"
+
+        #remove timezone (same as secondary progressions: dt comes in local time)
+        dt_utc = dt - datetime.timedelta(seconds=float(self.timezone)*float(3600))
+
+        #fresh natal frame (guarantees latitudes, RAMC and birth JD)
+        if getattr(self, 'planets', None) is None:
+            self.planets = db.getSettingsPlanet()
+        natal = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+
+        target_jd = primary_engine.julday(dt_utc.year,dt_utc.month,dt_utc.day,self.decHourJoin(dt_utc.hour,dt_utc.minute,dt_utc.second))
+        arc = primary_engine.arc_for_dates(natal.jd_ut, target_jd, key)
+        if converse:
+            arc = -arc
+        self.directed_arc = arc
+        self.directed_key = key
+        self.directed_converse = converse
+        self.directed_measure = measure
+
+        #outer wheel = directed positions (degree-in-sign for the labels).
+        #Ascensional measure renders OA values; the ecliptic measures render
+        #Marr-directed ecliptic longitudes (same outer in both: the mixed
+        #overlay only differs from the ecliptic chart in presentation).
+        if measure == "asc_asc":
+            oa_nat, dp, f_nat, dh = primary_engine.oa_positions(natal.planets_degree_ut, natal.planets_latitude, natal.houses_degree_ut[0], arc, self.geolat, natal.ramc, natal.jd_ut)
+        else:
+            dp, dh = primary_engine.direct_frame(natal.planets_degree_ut, natal.planets_latitude, natal.houses_degree_ut, arc, self.geolat, natal.ramc, natal.jd_ut)
+        self.t_planets_degree_ut = dp
+        self.t_planets_sign = [int(v // 30.0) % 12 for v in dp]
+        self.t_planets_degree = [v - s * 30.0 for v, s in zip(dp, self.t_planets_sign)]
+        self.t_planets_retrograde = list(natal.planets_retrograde)
+        self.t_houses_degree_ut = dh
+        self.t_houses_sign = [int(v // 30.0) % 12 for v in dh]
+        self.t_houses_degree = [v - s * 30.0 for v, s in zip(dh, self.t_houses_sign)]
+        #reference date = requested date at the natal place (derived chart)
+        self.t_year = dt_utc.year
+        self.t_month = dt_utc.month
+        self.t_day = dt_utc.day
+        self.t_hour = self.decHourJoin(dt_utc.hour,dt_utc.minute,dt_utc.second)
+        self.t_geolon = self.geolon
+        self.t_geolat = self.geolat
+        self.t_altitude = self.altitude
+        self.solar_active = True
+        self.biwheel_single = "Directed"
+        self.type = "Transit"
+        direction = _(", converse") if converse else ""
+        measure_tag = primary_engine.MEASURE_TAGS[measure]
+        openAstro.charttype="%s (%s-%02d-%02d, %s%s%s)" % (_("Primary Directions"),dt.year,dt.month,dt.day,key,measure_tag,direction)
+        openAstro.transit=True
+        return
+
+    def split_sign_degree(self, values):
+        #helper: full longitudes -> (signs, in-sign degrees) for the labels
+        signs = [int(v // 30.0) % 12 for v in values]
+        return signs, [v - s * 30.0 for v, s in zip(values, signs)]
     
     def makeSVG( self , printing=None ):
         #empty element points
@@ -1479,6 +1549,12 @@ class openAstroInstance:
             #at their dodecatemoria longitudes (see override below)
             module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
 
+        elif self.type == "Directed":
+            #single-wheel view of the directed positions ("Outer only"
+            #for the Primary Directions chart): directed houses as frame,
+            #planets at their directed longitudes (see override below)
+            module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+
         elif self.type == "Transit" or self.type == "Composite":
             module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
             t_module_data = ephemeris.ephData(self.t_year,self.t_month,self.t_day,self.t_hour,self.t_geolon,self.t_geolat,self.t_altitude,self.planets,self.zodiac,db.astrocfg)
@@ -1507,6 +1583,11 @@ class openAstroInstance:
         self.houses_sign = module_data.houses_sign
         self.houses_degree_ut = module_data.houses_degree_ut
         self.lunar_phase = module_data.lunar_phase
+        #extra natal frame for topocentric primary directions
+        #(openastromod.primary): ecliptic latitudes, RAMC and birth JD
+        self.planets_latitude = list(getattr(module_data, 'planets_latitude', [0.0] * len(self.planets_degree_ut)))
+        self.ramc = float(getattr(module_data, 'ramc', 0.0)) % 360.0
+        self.birth_jd = float(getattr(module_data, 'jd_ut', 0.0))
         #dodecatemorias (Morinus antiscia.calcDodecatemoria):
         #se recalculan sobre las longitudes finales para que el
         #modo Composite (promedio de longitudes) tambien sea correcto
@@ -1536,6 +1617,41 @@ class openAstroInstance:
             self.t_houses_degree_ut = list(self.houses_dodecatemoria_ut)
             self.t_houses_sign = list(self.houses_dodecatemoria_sign)
             self.t_houses_degree = list(self.houses_dodecatemoria)
+
+        if self.type == "Directed":
+            #rueda simple de direcciones primarias (vista "Outer only").
+            #Ascensional: OA dirigidas sobre marco OA; eclipticas: Marr
+            #sobre casas natales (ver localToDirected).
+            arc = getattr(self, 'directed_arc', 0.0)
+            measure = getattr(self, 'directed_measure', 'ecl_ecl')
+            if measure == "asc_asc":
+                oa_nat, dp, f_nat, dh = primary_engine.oa_positions(self.planets_degree_ut, self.planets_latitude, self.houses_degree_ut[0], arc, self.geolat, self.ramc, self.birth_jd)
+            else:
+                dp, dh = primary_engine.direct_frame(self.planets_degree_ut, self.planets_latitude, self.houses_degree_ut, arc, self.geolat, self.ramc, self.birth_jd)
+            self.planets_degree_ut = dp
+            self.planets_sign, self.planets_degree = self.split_sign_degree(dp)
+            self.houses_degree_ut = dh
+            self.houses_sign, self.houses_degree = self.split_sign_degree(dh)
+
+        if self.type == "Transit" and getattr(self, 'solar_active', False) and getattr(self, 'biwheel_single', '') == "Directed":
+            #bi-rueda de direcciones primarias: la rama Transit reescribe t_*
+            #desde t_year, asi que la rueda exterior se re-deriva aqui
+            #(interior intacto, salvo ascensional que renderiza ambas en OA).
+            arc = getattr(self, 'directed_arc', 0.0)
+            measure = getattr(self, 'directed_measure', 'ecl_ecl')
+            if measure == "asc_asc":
+                oa_nat, dp, f_nat, dh = primary_engine.oa_positions(self.planets_degree_ut, self.planets_latitude, self.houses_degree_ut[0], arc, self.geolat, self.ramc, self.birth_jd)
+                self.planets_degree_ut = oa_nat
+                self.planets_sign, self.planets_degree = self.split_sign_degree(oa_nat)
+                self.houses_degree_ut = f_nat
+                self.houses_sign, self.houses_degree = self.split_sign_degree(f_nat)
+            else:
+                dp, dh = primary_engine.direct_frame(self.planets_degree_ut, self.planets_latitude, self.houses_degree_ut, arc, self.geolat, self.ramc, self.birth_jd)
+            self.t_planets_degree_ut = dp
+            self.t_planets_sign, self.t_planets_degree = self.split_sign_degree(dp)
+            self.t_planets_retrograde = list(self.planets_retrograde)
+            self.t_houses_degree_ut = dh
+            self.t_houses_sign, self.t_houses_degree = self.split_sign_degree(dh)
         
         #make composite averages
         if self.type == "Composite":
@@ -2620,36 +2736,100 @@ class openAstroInstance:
                                 self.atgrid[-1]['p2']=x
                                 self.atgrid[-1]['aid']=z
                                 self.atgrid[-1]['diff']=diff
+                                if getattr(self, 'biwheel_single', '') == "Directed" and getattr(self, 'solar_active', False):
+                                    #directed grid shows the ARC orb in DMS plus
+                                    #applicative/separative (rectificacion report
+                                    #style) instead of the aspect degree. sig =
+                                    #outer directed body, pro = inner natal body;
+                                    #delta = needed_arc - elapsed_arc, orb = |delta|.
+                                    arc_now = float(getattr(self, 'directed_arc', 0.0))
+                                    converse = bool(getattr(self, 'directed_converse', False))
+                                    alpha = float(self.aspects[z]['degree'])
+                                    if getattr(self, 'directed_measure', 'ecl_ecl') == "asc_asc":
+                                        #OA aspects: perfection arc is linear in
+                                        #OA space, both rays tried
+                                        signed = (self.t_planets_degree_ut[x] - self.planets_degree_ut[i] + 180.0) % 360.0 - 180.0
+                                        best = None
+                                        for s in (1.0, -1.0):
+                                            orb = (s * alpha - signed + 180.0) % 360.0 - 180.0
+                                            if best is None or abs(orb) < abs(best):
+                                                best = orb
+                                        delta = best
+                                    else:
+                                        #zodiacal aspects: exact arc per ray under
+                                        #the significator's pole, closest to now wins
+                                        sig_lon = self.planets_degree_ut[x]
+                                        sig_lat = self.planets_latitude[x] if x < len(self.planets_latitude) else 0.0
+                                        pro_lon = self.planets_degree_ut[i]
+                                        rays = (0.0,) if alpha in (0.0, 180.0) else (alpha, -alpha)
+                                        best = None
+                                        for ray in rays:
+                                            exact = primary_engine.arc_of_direction(sig_lon, sig_lat, pro_lon, 0.0, ray, self.geolat, self.ramc, self.birth_jd)
+                                            delta = (exact - arc_now + 180.0) % 360.0 - 180.0
+                                            if best is None or abs(delta) < abs(best):
+                                                best = delta
+                                        delta = best
+                                    self.atgrid[-1]['arc_orb'] = abs(delta)
+                                    self.atgrid[-1]['applicative'] = (delta < 0) if converse else (delta > 0)
         return out
-    
+
     def makeAspectTransitGrid( self , r ):
         out = '<g transform="translate(500,310)">'
-        out += '<text y="-15" x="0" style="fill:%s; font-size: 12px;">%s</text>\n' % (self.colors['paper_0'],_("Planets in Transit"))
+        if getattr(self, 'biwheel_single', '') == "Directed":
+            grid_title = _("Directed to Natal")
+        else:
+            grid_title = _("Planets in Transit")
+        out += '<text y="-15" x="0" style="fill:%s; font-size: 12px;">%s</text>\n' % (self.colors['paper_0'],grid_title)
         line = 0
         nl = 0
+        #directed rows carry a long orb text: give the second column room.
+        #tightest orb first, widest last.
+        if getattr(self, 'biwheel_single', '') == "Directed":
+            nl_step = 110
+            self.atgrid.sort(key=lambda e: e.get('arc_orb', 999.0))
+        else:
+            nl_step = 100
         for i in range(len(self.atgrid)):
             if i == 12:
-                nl = 100
+                nl = nl_step
                 if len(self.atgrid) > 24:
                     line = -1 * ( len(self.atgrid) - 24) * 14
                 else:
                     line = 0
             out += '<g transform="translate(%s,%s)">' % (nl,line)
-            #first planet symbol
-            out += '<use transform="scale(0.4)" x="0" y="3" xlink:href="#%s" />\n' % (
-                self.planets[self.atgrid[i]['p2']]['name'])
-            #aspect symbol
-            out += '<use  x="15" y="0" xlink:href="#orb%s" />\n' % (
-                self.aspects[self.atgrid[i]['aid']]['degree'])
-            #second planet symbol
-            out += '<g transform="translate(30,0)">'
-            out += '<use transform="scale(0.4)" x="0" y="3" xlink:href="#%s" />\n' % (
-                self.svgSafeHref(self.planets[self.atgrid[i]['p1']]['name']))
-            out += '</g>'
-            #difference in degrees
-            out += '<text y="8" x="45" style="fill:%s; font-size: 10px;">%s</text>' % (
-                self.colors['paper_0'],
-                self.dec2deg(self.atgrid[i]['diff']) )
+            if getattr(self, 'biwheel_single', '') == "Directed" and 'arc_orb' in self.atgrid[i]:
+                #directed list: outer glyph, aspect glyph, inner glyph,
+                #signed arc-orb in DMS plus applicative/separative mark
+                out += '<use transform="scale(0.4)" x="0" y="3" xlink:href="#%s" />\n' % (
+                    self.planets[self.atgrid[i]['p2']]['name'])
+                out += '<use  x="12" y="0" xlink:href="#orb%s" />\n' % (
+                    self.aspects[self.atgrid[i]['aid']]['degree'])
+                out += '<g transform="translate(24,0)">'
+                out += '<use transform="scale(0.4)" x="0" y="3" xlink:href="#%s" />\n' % (
+                    self.svgSafeHref(self.planets[self.atgrid[i]['p1']]['name']))
+                out += '</g>'
+                app = self.atgrid[i]['applicative']
+                color = '#008000' if app else '#c00000'
+                mark = 'A' if app else 'S'
+                out += '<text y="8" x="38" style="fill:%s; font-size: 9px;">%s%s %s</text>' % (
+                    color, '+' if app else '-',
+                    self.dec2deg(self.atgrid[i]['arc_orb']), mark)
+            else:
+                #first planet symbol
+                out += '<use transform="scale(0.4)" x="0" y="3" xlink:href="#%s" />\n' % (
+                    self.planets[self.atgrid[i]['p2']]['name'])
+                #aspect symbol
+                out += '<use  x="15" y="0" xlink:href="#orb%s" />\n' % (
+                    self.aspects[self.atgrid[i]['aid']]['degree'])
+                #second planet symbol
+                out += '<g transform="translate(30,0)">'
+                out += '<use transform="scale(0.4)" x="0" y="3" xlink:href="#%s" />\n' % (
+                    self.svgSafeHref(self.planets[self.atgrid[i]['p1']]['name']))
+                out += '</g>'
+                #difference in degrees
+                out += '<text y="8" x="45" style="fill:%s; font-size: 10px;">%s</text>' % (
+                    self.colors['paper_0'],
+                    self.dec2deg(self.atgrid[i]['diff']) )
             #line
             out += '</g>'
             line = line + 14        
@@ -3114,8 +3294,10 @@ class mainWindow:
         special_menu.append(mi(_('Solar Return'), self.specialSolar, 'Solar'))
         special_menu.append(mi(_('Secondary Progressions'), self.specialSecondaryProgression, 'SecondaryProgression'))
         special_menu.append(mi(_('Dodecatemoria Chart'), self.specialDodecatemoria, 'Dodecatemoria'))
+        special_menu.append(mi(_('Primary Directions'), self.specialDirected, 'Directed'))
         #bi-wheel view selector for Solar Return / Secondary Progression /
-        #Transit Chart / Synastry / Dodecatemoria: both, natal (inner) only, or outer only
+        #Transit Chart / Synastry / Dodecatemoria / Primary Directions: both,
+        #natal (inner) only, or outer only
         special_menu.append(Gtk.SeparatorMenuItem())
         srv_top, srv_menu = submenu(_('Chart View'))
         srv_group = None
@@ -3317,8 +3499,9 @@ class mainWindow:
 
     def solarView(self, widget, mode):
         #switch a bi-wheel chart (solar return, secondary progression,
-        #transit, synastry or dodecatemoria) between inner-only, outer-only
-        #and both; the radio fires 'toggled' for both items, so act only on the active one
+        #transit, synastry, dodecatemoria or primary directions) between
+        #inner-only, outer-only and both; the radio fires 'toggled' for both
+        #items, so act only on the active one
         if not widget.get_active():
             return
         if not getattr(openAstro, 'solar_active', False):
@@ -3621,6 +3804,146 @@ class mainWindow:
         #"Outer only" in the view selector shows the dodecatemorias alone
         openAstro.localToDodecatemoria()
         #a fresh dodecatemoria chart defaults to the bi-wheel view
+        self._resetChartViewBoth()
+        self.updateChart()
+        return
+
+    def specialDirected(self, widget):
+        #dialog asks the target date, the time key, the direction and the
+        #measure, then draws the bi-wheel: radix inside, directed outside
+        self.win_SPD = Gtk.Dialog(parent=self.window)
+        self.win_SPD.set_icon_from_file(cfg.iconWindow)
+        self.win_SPD.set_title(_("Primary Directions"))
+        self.win_SPD.connect("delete_event", lambda w,e: self.win_SPD.destroy())
+        self.win_SPD.move(150,150)
+        self.win_SPD.set_border_width(5)
+        self.win_SPD.set_size_request(360,300)
+
+        #create a table
+        table = Gtk.Table(n_rows=1, n_columns=4, homogeneous=False)
+        table.set_border_width(10)
+
+        #options
+        table.attach(Gtk.Label(label=_("Select date for Primary Directions")+":"), 0, 1, 0, 1, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+        hbox = Gtk.HBox(spacing=4)
+        entry={}
+        now = datetime.datetime.now()
+
+        #last used values are remembered in astrocfg (None on first use)
+        def last(key, default):
+            val = db.getAstrocfg(key)
+            return val if val is not None else default
+
+        hbox.pack_start(Gtk.Label(label=_('Year')+": "), False, False, 0)
+        entry['Y']=Gtk.Entry()
+        entry['Y'].set_max_length(4)
+        entry['Y'].set_width_chars(4)
+        entry['Y'].set_text(last('directed_Y', str(now.year)))
+        hbox.pack_start(entry['Y'], False, False, 0)
+        hbox.pack_start(Gtk.Label(label=_('Month')+": "), False, False, 0)
+        entry['M']=Gtk.Entry()
+        entry['M'].set_max_length(2)
+        entry['M'].set_width_chars(2)
+        entry['M'].set_text(last('directed_M', '%02d'%(now.month)))
+        hbox.pack_start(entry['M'], False, False, 0)
+        hbox.pack_start(Gtk.Label(label=_('Day')+": "), False, False, 0)
+        entry['D']=Gtk.Entry()
+        entry['D'].set_max_length(2)
+        entry['D'].set_width_chars(2)
+        entry['D'].set_text(last('directed_D', str(now.day)))
+        hbox.pack_start(entry['D'], False, False, 0)
+        table.attach(hbox,0,1,1,2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Hour')+": "), False, False, 0)
+        entry['h']=Gtk.Entry()
+        entry['h'].set_max_length(2)
+        entry['h'].set_width_chars(2)
+        entry['h'].set_text(last('directed_h', '%02d'%(now.hour)))
+        hbox.pack_start(entry['h'], False, False, 0)
+        hbox.pack_start(Gtk.Label(label=_('Min')+": "), False, False, 0)
+        entry['m']=Gtk.Entry()
+        entry['m'].set_max_length(2)
+        entry['m'].set_width_chars(2)
+        entry['m'].set_text(last('directed_m', '%02d'%(now.minute)))
+        hbox.pack_start(entry['m'], False, False, 0)
+        table.attach(hbox,0,1,2,3, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        #time key selector (Naibod default: the only one verified
+        #against published values; see openastromod.primary)
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Time Key')+": "), False, False, 0)
+        self.directed_key_list = ["naibod", "ptolomeo", "arco_solar_ar"]
+        entry['K']=Gtk.ComboBoxText.new()
+        entry['K'].append_text(_("Naibod (0.9856 deg/year)"))
+        entry['K'].append_text(_("Ptolemy (1 deg/year)"))
+        entry['K'].append_text(_("Solar Arc in RA"))
+        last_key = last('directed_key', "naibod")
+        entry['K'].set_active(self.directed_key_list.index(last_key) if last_key in self.directed_key_list else 0)
+        hbox.pack_start(entry['K'], False, False, 0)
+        table.attach(hbox,0,1,3,4, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        #direction selector (converse = negated arc, towards the past)
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Direction')+": "), False, False, 0)
+        entry['R']=Gtk.ComboBoxText.new()
+        entry['R'].append_text(_("Direct"))
+        entry['R'].append_text(_("Converse"))
+        try:
+            entry['R'].set_active(int(last('directed_dir', '0')) == 1 and 1 or 0)
+        except (TypeError, ValueError):
+            entry['R'].set_active(0)
+        hbox.pack_start(entry['R'], False, False, 0)
+        table.attach(hbox,0,1,4,5, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        #measure selector: directed-point measure / natal reference measure
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Measure')+": "), False, False, 0)
+        self.directed_measure_list = ["ecl_ecl", "asc_asc", "asc_ecl"]
+        entry['S']=Gtk.ComboBoxText.new()
+        entry['S'].append_text(_("Ecliptic / natal ecliptic"))
+        entry['S'].append_text(_("Ascensional / natal ascensional"))
+        entry['S'].append_text(_("Ascensional / natal ecliptic"))
+        last_measure = last('directed_measure', "ecl_ecl")
+        entry['S'].set_active(self.directed_measure_list.index(last_measure) if last_measure in self.directed_measure_list else 0)
+        hbox.pack_start(entry['S'], False, False, 0)
+        table.attach(hbox,0,1,5,6, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        #make the ui layout with ok button
+        self.win_SPD.vbox.pack_start(table, True, True, 0)
+
+        #ok button
+        button = Gtk.Button.new_with_mnemonic(_("_OK"))
+        button.connect("clicked", self.specialDirectedSubmit, entry)
+        button.set_can_default(True)
+        self.win_SPD.action_area.pack_start(button, True, True, 0)
+        button.grab_default()
+
+        #cancel button
+        button = Gtk.Button.new_with_mnemonic(_("_Cancel"))
+        button.connect("clicked", lambda w: self.win_SPD.destroy())
+        self.win_SPD.action_area.pack_start(button, True, True, 0)
+
+        self.win_SPD.show_all()
+        return
+
+    def specialDirectedSubmit(self, widget, entry):
+        dt  = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()),int(entry['h'].get_text()),int(entry['m'].get_text()))
+        key = self.directed_key_list[entry['K'].get_active()]
+        converse = entry['R'].get_active() == 1
+        measure = self.directed_measure_list[entry['S'].get_active()]
+        #remember last used parameters in astrocfg for the next run
+        db.setAstrocfg('directed_Y', entry['Y'].get_text())
+        db.setAstrocfg('directed_M', entry['M'].get_text())
+        db.setAstrocfg('directed_D', entry['D'].get_text())
+        db.setAstrocfg('directed_h', entry['h'].get_text())
+        db.setAstrocfg('directed_m', entry['m'].get_text())
+        db.setAstrocfg('directed_key', key)
+        db.setAstrocfg('directed_dir', '1' if converse else '0')
+        db.setAstrocfg('directed_measure', measure)
+        openAstro.localToDirected(dt, key, converse, measure)
+        self.win_SPD.destroy()
+        #a fresh directed chart defaults to the bi-wheel view
         self._resetChartViewBoth()
         self.updateChart()
         return

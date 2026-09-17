@@ -42,6 +42,7 @@
         <menuitem action="Solar"/>
         <menuitem action="SecondaryProgression"/>
         <menuitem action="Dodecatemoria"/>
+        <menuitem action="Directed"/>
       </menu>
       <menu action="Tables">
         <menuitem action="MonthlyTimeline"/>
