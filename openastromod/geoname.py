@@ -26,12 +26,14 @@ preset vars:
 	maxRows=1
 """
 
-from urllib.request import urlopen
-from urllib.parse import urlencode
+from urllib.request import urlopen # python3
+#from urllib2 import urlopen 
+from urllib.parse import urlencode # python3
+#from urllib import urlencode
 from xml.dom.minidom import parseString
 from socket import timeout
-from urllib.error import HTTPError, URLError
-
+from urllib.error import HTTPError, URLError # python3
+#from urllib2 import HTTPError, URLError
 
 def _getText(nodelist):
 	"""Internal function to return text from nodes

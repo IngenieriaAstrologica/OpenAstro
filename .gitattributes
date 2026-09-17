@@ -1,0 +1,10 @@
+# Keep LF line endings on every platform for everything that runs on Linux/WSL
+# (prevents CRLF from breaking launch.sh, the openastro script and *.py files).
+* text=auto eol=lf
+
+# The Windows batch launcher must stay CRLF
+*.bat text eol=crlf
+
+# Binary assets: never convert
+*.ico binary
+*.mo  binary

@@ -86,13 +86,14 @@ class ephData:
 			for x in range(len(zodiac)):
 				deg_low=float(x*30)
 				deg_high=float((x+1)*30)
-				if ret_flag[0] >= deg_low:
-					if ret_flag[0] <= deg_high:
+				if (ret_flag[0][0] >= deg_low):
+					if ret_flag[0][0] <= deg_high:
 						self.planets_sign[i]=x
-						self.planets_degree[i] = ret_flag[0] - deg_low
-						self.planets_degree_ut[i] = ret_flag[0]
+						self.planets_degree[i] = ret_flag[0][0] - deg_low
+						self.planets_degree_ut[i] = ret_flag[0][0]
 						#if latitude speed is negative, there is retrograde
-						if ret_flag[3] < 0:						
+						#if ret_flag[3] < 0:						
+						if ret_flag[0][3] < 0:						
 							self.planets_retrograde[i] = True
 						else:
 							self.planets_retrograde[i] = False
@@ -100,7 +101,7 @@ class ephData:
 							
 		#available house systems:
 		"""
-		hsys= 		‘P’     Placidus
+		hsys= 	‘P’     Placidus
 				‘K’     Koch
 				‘O’     Porphyrius
 				‘R’     Regiomontanus
@@ -141,7 +142,7 @@ class ephData:
 		#offset
 		offset = moon - sun
 		
-		#if planet degrees is greater than 360 substract 360 or below 0 add 360
+		#if a house degree is greater than 360 subtract 360; if below 0, add 360
 		for i in range(len(self.houses_degree_ut)):
 			#add offset
 			#self.houses_degree_ut[i] += offset
@@ -289,10 +290,18 @@ class ephData:
 		self.planets_degree_ut[25] = self.houses_degree_ut[6]
 		self.planets_degree_ut[26] = self.houses_degree_ut[3]
 		
-		#list index 27 is day pars
-		self.planets_degree_ut[27] = asc + (moon - sun)
-		#list index 28 is night pars
-		self.planets_degree_ut[28] = asc + (sun - moon)
+		#sect: diurnal chart if the Sun is above the horizon (houses 7-12),
+		#that is, between Dsc and Asc in zodiacal order
+		day_chart = (sun - asc) % 360.0 >= 180.0
+
+		#list index 27 is lot of fortune: ASC + Moon - Sun (day), ASC + Sun - Moon (night)
+		#list index 28 is lot of spirit: ASC + Sun - Moon (day), ASC + Moon - Sun (night)
+		if day_chart:
+			self.planets_degree_ut[27] = asc + (moon - sun)
+			self.planets_degree_ut[28] = asc + (sun - moon)
+		else:
+			self.planets_degree_ut[27] = asc + (sun - moon)
+			self.planets_degree_ut[28] = asc + (moon - sun)
 		#list index 29 is South Node
 		self.planets_degree_ut[29] = self.planets_degree_ut[10] - 180.0
 		#list index 30 is marriage pars
@@ -307,9 +316,16 @@ class ephData:
 		self.planets_degree_ut[34] = self.planets_degree_ut[12] + true_lilith
 		#swiss ephemeris version of true lilith
 		#self.planets_degree_ut[34] = swe.nod_aps_ut(self.jul_day_UT,1,swe.NODBIT_OSCU,swe.FLG_SWIEPH)[3][0]
+		#list index 35 is lot of infortune: ASC + Mars - Saturn (day), ASC + Saturn - Mars (night)
+		mars = self.planets_degree_ut[4]
+		saturn = self.planets_degree_ut[6]
+		if day_chart:
+			self.planets_degree_ut[35] = asc + mars - saturn
+		else:
+			self.planets_degree_ut[35] = asc + saturn - mars
 
-		#adjust list index 32 and 33
-		for i in range(23,35):
+		#normalize list index 23 to 35
+		for i in range(23,36):
 			while ( self.planets_degree_ut[i] < 0 ): self.planets_degree_ut[i]+=360.0
 			while ( self.planets_degree_ut[i] > 360.0): self.planets_degree_ut[i]-=360.0
 	
@@ -335,7 +351,8 @@ class ephData:
 		sunstep=[0,30,40,50,60,70,80,90,120,130,140,150,160,170,180,210,220,230,240,250,260,270,300,310,320,330,340,350]
 		for x in range(len(sunstep)):
 			low=sunstep[x]
-			if x is 27: high=360
+			#if x is 27: high=360
+			if (x == 27): high=360
 			else: high=sunstep[x+1]
 			if ddeg >= low and ddeg < high: sphase=x+1
 		self.lunar_phase={
@@ -351,7 +368,7 @@ def years_diff(y1, m1, d1, h1 , y2, m2, d2, h2):
 		swe.set_ephe_path(ephe_path)
 		jd1 = swe.julday(y1,m1,d1,h1)
 		jd2 = swe.julday(y2,m2,d2,h2)
-		jd = jd1 + swe._years_diff(jd1, jd2)
+		jd = jd1 + ( (jd2-jd1) / 365.248193724 )
 		#jd = jd1 + ( (jd2-jd1) / 365.248193724 )
-		y, mth, d, h, m, s = swe._revjul(jd, swe.GREG_CAL)
-		return datetime.datetime(y,mth,d,h,m,s)
+		y, mth, d, hourf = swe.revjul(jd, swe.GREG_CAL)
+		return datetime.datetime(y,mth,d) + datetime.timedelta(hours=hourf)

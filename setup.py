@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-from distutils.core import setup, Extension
-import glob, os.path, sys
+from setuptools import setup
+import glob
 
 f=open('VERSION')
-VERSION=f.read()
+VERSION=f.read().strip()
 f.close()
 
 f=glob.glob('locale/*')
@@ -26,6 +26,8 @@ setup(name='OpenAstro.org',
       description='Open Source Astrology',
       author='Pelle van der Scheer',
       author_email='devel@openastro.org',
+      maintainer='jipejavier',
+      maintainer_email='jipejavier@gmail.com',
       url='http://www.openastro.org',
       license='GPL',
       scripts=['openastro'],

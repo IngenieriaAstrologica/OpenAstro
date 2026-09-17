@@ -716,7 +716,7 @@ msgid "Duplicate"
 msgstr ""
 
 #: openastro.org/current/openastro:4103 openastro.org/current/openastro:6010
-msgid "There is allready an entry for this name, please choose another"
+msgid "There is already an entry for this name, please choose another"
 msgstr ""
 
 #: openastro.org/current/openastro:4111

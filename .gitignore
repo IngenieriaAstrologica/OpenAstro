@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# OpenAstro runtime
+*.db-journal
+*.svg
+!icons/**/*.svg
+tmp/
+
+# Chart exports (PNG, JPG, PDF) contain birth data
+*.png
+*.jpg
+*.jpeg
+*.pdf
+
+# SQLite databases. The two OpenAstro atlases are kept in the repo:
+#   famous.sql    (~364 KB, famous-people database)
+#   geonames.sql  (~31 MB, offline city atlas)
+# Runtime and exported databases (astrodb.sql, peopledb.sql, chart exports,
+# journals) stay out.
+*.sql
+*.db
+!famous.sql
+!geonames.sql
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Backup files and Dropbox conflict copies (English and Spanish names)
+*~
+old/
+*conflicted copy*
+*Copia en conflicto*
