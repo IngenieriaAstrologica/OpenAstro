@@ -29,6 +29,28 @@ ephe_path=swissDir+':'+swissLocalDir
 
 import swisseph as swe
 
+def normalize_dodec(lon):
+	"""Normaliza longitud a 0..360 (igual que util.normalize de Morinus)."""
+	lon = float(lon) % 360.0
+	if lon < 0:
+		lon += 360.0
+	return lon
+
+def calc_dodecatemoria(lon):
+	"""Dodecatemoria segun Morinus (antiscia.calcDodecatemoria).
+
+	30*signo + 12*longitud_relativa, normalizado a 0..360.
+	Cada signo de 30 grados se expande x12 sobre el zodiaco
+	(segmentos de 2.5 grados). La longitud de entrada ya viene
+	en el zodiaco configurado (tropical/sideral), por eso no se
+	resta ayanamsa aqui (Morinus lo hace porque parte de tropical).
+	"""
+	lon = normalize_dodec(lon)
+	sign = int(lon // 30.0)
+	rel = lon - sign * 30.0
+	# KeepBetweenLimit(rel,30) ya garantizado; KeepInZodiac al final
+	return normalize_dodec(30.0 * sign + 12.0 * rel)
+
 class ephData:
 	def __init__(self,year,month,day,hour,geolon,geolat,altitude,planets,zodiac,openastrocfg,houses_override=None):
 		#ephemeris path (default "/usr/share/swisseph:/usr/local/share/swisseph")
@@ -340,6 +362,25 @@ class ephData:
 						self.planets_retrograde[i] = False
 
 		#lunar phase, anti-clockwise degrees between sun and moon
+		# --- Dodecatemorias (Morinus antiscia.calcDodecatemoria) ---
+		# Longitud dodecatemoria para cada cuerpo y cada cuspide.
+		# Se calculan sobre planets_degree_ut / houses_degree_ut ya
+		# normalizados (tropical o sideral segun configuracion).
+		self.planets_dodecatemoria_ut = [calc_dodecatemoria(v) for v in self.planets_degree_ut]
+		self.planets_dodecatemoria_sign = []
+		self.planets_dodecatemoria = []
+		for v in self.planets_dodecatemoria_ut:
+			s = int(v // 30.0) % 12
+			self.planets_dodecatemoria_sign.append(s)
+			self.planets_dodecatemoria.append(v - s * 30.0)
+		self.houses_dodecatemoria_ut = [calc_dodecatemoria(v) for v in self.houses_degree_ut]
+		self.houses_dodecatemoria_sign = []
+		self.houses_dodecatemoria = []
+		for v in self.houses_dodecatemoria_ut:
+			s = int(v // 30.0) % 12
+			self.houses_dodecatemoria_sign.append(s)
+			self.houses_dodecatemoria.append(v - s * 30.0)
+
 		ddeg=moon-sun
 		if ddeg<0: ddeg+=360.0
 		step=360.0 / 28.0

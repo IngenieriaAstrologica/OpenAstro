@@ -660,7 +660,8 @@ of crashing.
 - The selector covers all four bi-wheel charts: **Solar Return**, **Secondary
   Progressions**, **Transit Chart** and **Synastry**. "Inner only" always shows
   the natal chart; "Outer only" shows the return, the progressed chart, the
-  transit moment or the partner's chart respectively.
+  transit moment or the partner's chart respectively. (A fifth bi-wheel,
+  **Dodecatemoria**, was added later — see below.)
 
 ### How it works
 - Each bi-wheel chart copies its outer chart into the transit slots (`t_*`) and
@@ -681,3 +682,41 @@ of crashing.
 - `openastro` — `localToSolar`, `localToSecondaryProgression`, `specialTransit`,
   `openDatabaseSelectReturn`, the `TransitOuter` branch in `makeSVG`, the
   `Chart View` submenu and the `solarView` handler
+
+---
+
+## Feature: Dodecatemoria chart — 2026-09-17
+
+### Change
+- New **Chart Type → Dodecatemoria Chart**: a **bi-wheel** with the radix on the
+  inside and the **dodecatemorias** of every natal position on the outside
+  (reusing the transit ring). The **Chart View** submenu applies as usual:
+  **Both**, **Inner only** (radix) and **Outer only** (dodecatemorias alone on
+  the natal house frame).
+- Bonus: the Both view also draws the radix–dodecatemoria aspects.
+- Formula ported from Morinus (`antiscia.calcDodecatemoria`):
+  `dodec = 30*sign + 12*relative_longitude (mod 360)` — each 30° sign expands
+  ×12 over the zodiac (2.5° slices). No extra ayanamsa step: OpenAstro
+  longitudes already come in the configured zodiac (tropical/sidereal).
+
+### How it works
+- `openastromod/swiss.py` — new `calc_dodecatemoria()` plus per-body
+  `planets_dodecatemoria_ut` / `houses_dodecatemoria_ut` (sign + in-sign degree)
+  computed in `ephData`.
+- `openastro.localToDodecatemoria()` derives the outer wheel from the radix
+  into `t_*` and sets `type="Transit"`, `solar_active=True`,
+  `biwheel_single="Dodecatemoria"` (no new date needed — unlike returns).
+- `makeSVG()` re-derives `t_*` from the radix when
+  `biwheel_single == "Dodecatemoria"`, because the `Transit` branch rewrites
+  `t_*` from `t_year` (= natal) on every redraw. New `type == "Dodecatemoria"`
+  branch renders the single-wheel "Outer only" view: dodecatemoria planets on
+  natal houses.
+- `specialDodecatemoria()` + Special-menu entry; `solarView()` needed no
+  changes (it already dispatches through `biwheel_single`).
+
+### Files changed
+- `openastro` — `localToDodecatemoria`, `specialDodecatemoria`, the
+  `Dodecatemoria` branch and outer-wheel override in `makeSVG`, the Special
+  menu entry
+- `openastromod/swiss.py` — `calc_dodecatemoria`, dodecatemoria attributes
+- `openastro-ui.xml` — reference menu entry (file kept for reference only)

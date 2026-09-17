@@ -1266,11 +1266,11 @@ class openAstroInstance:
         self.zoom=1
         self.type="Radix"
         #bi-wheel state for Chart View (Both / Inner only / Outer only):
-        #Solar Return, Secondary Progressions, Transit Chart and Synastry
-        #are shown as bi-wheels (natal inside, derived chart outside in t_*)
-        #while solar_active is True; biwheel_single tells "Outer only"
+        #Solar Return, Secondary Progressions, Transit Chart, Synastry and
+        #Dodecatemoria are shown as bi-wheels (natal inside, derived chart
+        #outside in t_*) while solar_active is True; biwheel_single tells "Outer only"
         #which single-wheel type to render ("Solar",
-        #"SecondaryProgression" or "TransitOuter")
+        #"SecondaryProgression", "Dodecatemoria" or "TransitOuter")
         self.solar_active=False
         self.biwheel_single="Solar"
         
@@ -1397,6 +1397,50 @@ class openAstroInstance:
         openAstro.charttype="%s (%s-%02d-%02d %02d:%02d)" % (openAstro.label["secondary_progressions"],dt.year,dt.month,dt.day,dt.hour,dt.minute)
         openAstro.transit=True
         return
+
+    def localToDodecatemoria(self):
+        #Dodecatemorias (Morinus antiscia.calcDodecatemoria) como rueda exterior:
+        #el radix se mantiene en self.* (rueda interior) y las dodecatemorias
+        #de cada posicion natal se copian en self.t_* (rueda exterior),
+        #reutilizando el anillo de transitos. No requiere fecha nueva:
+        #deriva integramente del radix (dodec = 30*signo + 12*lon_relativa).
+        try:
+            natal_ut = list(self.planets_degree_ut)
+            natal_houses_ut = list(self.houses_degree_ut)
+            natal_retro = list(self.planets_retrograde)
+        except AttributeError:
+            planets = getattr(self, 'planets', None) or db.getSettingsPlanet()
+            self.planets = planets
+            module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+            natal_ut = list(module_data.planets_degree_ut)
+            natal_houses_ut = list(module_data.houses_degree_ut)
+            natal_retro = list(module_data.planets_retrograde)
+
+        dodec_ut = [ephemeris.calc_dodecatemoria(v) for v in natal_ut]
+        dodec_houses_ut = [ephemeris.calc_dodecatemoria(v) for v in natal_houses_ut]
+
+        #rueda exterior = dodecatemorias (grado_en_signo para las etiquetas)
+        self.t_planets_degree_ut = dodec_ut
+        self.t_planets_sign = [int(v // 30.0) % 12 for v in dodec_ut]
+        self.t_planets_degree = [v - s * 30.0 for v, s in zip(dodec_ut, self.t_planets_sign)]
+        self.t_planets_retrograde = natal_retro
+        self.t_houses_degree_ut = dodec_houses_ut
+        self.t_houses_sign = [int(v // 30.0) % 12 for v in dodec_houses_ut]
+        self.t_houses_degree = [v - s * 30.0 for v, s in zip(dodec_houses_ut, self.t_houses_sign)]
+        #referencia temporal/geografica = radix (no es un momento real)
+        self.t_year = self.year
+        self.t_month = self.month
+        self.t_day = self.day
+        self.t_hour = self.hour
+        self.t_geolon = self.geolon
+        self.t_geolat = self.geolat
+        self.t_altitude = self.altitude
+        self.solar_active = True
+        self.biwheel_single = "Dodecatemoria"
+        self.type = "Transit"
+        openAstro.charttype="%s (%s)" % (_("Dodecatemoria"), openAstro.name)
+        openAstro.transit=True
+        return
     
     def makeSVG( self , printing=None ):
         #empty element points
@@ -1429,6 +1473,12 @@ class openAstroInstance:
             #with its own houses, like a Radix of that moment
             module_data = ephemeris.ephData(self.t_year,self.t_month,self.t_day,self.t_hour,self.t_geolon,self.t_geolat,self.t_altitude,self.planets,self.zodiac,db.astrocfg)
 
+        elif self.type == "Dodecatemoria":
+            #single-wheel view of the dodecatemoria positions ("Outer only"
+            #for the Dodecatemoria chart): natal houses as frame, planets
+            #at their dodecatemoria longitudes (see override below)
+            module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+
         elif self.type == "Transit" or self.type == "Composite":
             module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
             t_module_data = ephemeris.ephData(self.t_year,self.t_month,self.t_day,self.t_hour,self.t_geolon,self.t_geolat,self.t_altitude,self.planets,self.zodiac,db.astrocfg)
@@ -1447,7 +1497,7 @@ class openAstroInstance:
             self.t_houses_degree = t_module_data.houses_degree
             self.t_houses_sign = t_module_data.houses_sign
             self.t_houses_degree_ut = t_module_data.houses_degree_ut
-            
+
         #grab normal module data
         self.planets_sign = module_data.planets_sign
         self.planets_degree = module_data.planets_degree
@@ -1455,8 +1505,37 @@ class openAstroInstance:
         self.planets_retrograde = module_data.planets_retrograde
         self.houses_degree = module_data.houses_degree
         self.houses_sign = module_data.houses_sign
-        self.houses_degree_ut = module_data.houses_degree_ut        
+        self.houses_degree_ut = module_data.houses_degree_ut
         self.lunar_phase = module_data.lunar_phase
+        #dodecatemorias (Morinus antiscia.calcDodecatemoria):
+        #se recalculan sobre las longitudes finales para que el
+        #modo Composite (promedio de longitudes) tambien sea correcto
+        self.planets_dodecatemoria_ut = [ephemeris.calc_dodecatemoria(v) for v in self.planets_degree_ut]
+        self.planets_dodecatemoria_sign = [int(v // 30.0) % 12 for v in self.planets_dodecatemoria_ut]
+        self.planets_dodecatemoria = [v - s * 30.0 for v, s in zip(self.planets_dodecatemoria_ut, self.planets_dodecatemoria_sign)]
+        self.houses_dodecatemoria_ut = [ephemeris.calc_dodecatemoria(v) for v in self.houses_degree_ut]
+        self.houses_dodecatemoria_sign = [int(v // 30.0) % 12 for v in self.houses_dodecatemoria_ut]
+        self.houses_dodecatemoria = [v - s * 30.0 for v, s in zip(self.houses_dodecatemoria_ut, self.houses_dodecatemoria_sign)]
+
+        if self.type == "Dodecatemoria":
+            #rueda simple de dodecatemorias: los planetas se dibujan en sus
+            #dodecatemorias sobre el marco de casas natales (los atributos
+            #planets_dodecatemoria_* ya contienen estos mismos valores)
+            self.planets_degree_ut = list(self.planets_dodecatemoria_ut)
+            self.planets_sign = list(self.planets_dodecatemoria_sign)
+            self.planets_degree = list(self.planets_dodecatemoria)
+
+        if self.type == "Transit" and getattr(self, 'solar_active', False) and getattr(self, 'biwheel_single', '') == "Dodecatemoria":
+            #bi-rueda de dodecatemorias: la rama Transit reescribe t_* desde
+            #t_year (= natal), asi que la rueda exterior se re-deriva aqui
+            #como dodecatemorias del radix (interior intacto)
+            self.t_planets_degree_ut = list(self.planets_dodecatemoria_ut)
+            self.t_planets_sign = list(self.planets_dodecatemoria_sign)
+            self.t_planets_degree = list(self.planets_dodecatemoria)
+            self.t_planets_retrograde = list(self.planets_retrograde)
+            self.t_houses_degree_ut = list(self.houses_dodecatemoria_ut)
+            self.t_houses_sign = list(self.houses_dodecatemoria_sign)
+            self.t_houses_degree = list(self.houses_dodecatemoria)
         
         #make composite averages
         if self.type == "Composite":
@@ -3034,8 +3113,9 @@ class mainWindow:
         special_menu.append(mi(_('Combine Chart'), lambda w: self.openDatabaseSelect(_("Select for Combine"), "Combine"), 'Combine'))
         special_menu.append(mi(_('Solar Return'), self.specialSolar, 'Solar'))
         special_menu.append(mi(_('Secondary Progressions'), self.specialSecondaryProgression, 'SecondaryProgression'))
+        special_menu.append(mi(_('Dodecatemoria Chart'), self.specialDodecatemoria, 'Dodecatemoria'))
         #bi-wheel view selector for Solar Return / Secondary Progression /
-        #Transit Chart / Synastry: both, natal (inner) only, or outer only
+        #Transit Chart / Synastry / Dodecatemoria: both, natal (inner) only, or outer only
         special_menu.append(Gtk.SeparatorMenuItem())
         srv_top, srv_menu = submenu(_('Chart View'))
         srv_group = None
@@ -3237,8 +3317,8 @@ class mainWindow:
 
     def solarView(self, widget, mode):
         #switch a bi-wheel chart (solar return, secondary progression,
-        #transit or synastry) between inner-only, outer-only and both;
-        #the radio fires 'toggled' for both items, so act only on the active one
+        #transit, synastry or dodecatemoria) between inner-only, outer-only
+        #and both; the radio fires 'toggled' for both items, so act only on the active one
         if not widget.get_active():
             return
         if not getattr(openAstro, 'solar_active', False):
@@ -3532,6 +3612,15 @@ class mainWindow:
         openAstro.localToSecondaryProgression(dt)
         self.win_SSP.destroy()
         #a fresh progression defaults to the bi-wheel view
+        self._resetChartViewBoth()
+        self.updateChart()
+        return
+
+    def specialDodecatemoria(self, widget):
+        #bi-wheel: radix inside, dodecatemorias outside (reuses the transit ring);
+        #"Outer only" in the view selector shows the dodecatemorias alone
+        openAstro.localToDodecatemoria()
+        #a fresh dodecatemoria chart defaults to the bi-wheel view
         self._resetChartViewBoth()
         self.updateChart()
         return
@@ -4036,7 +4125,7 @@ class mainWindow:
             self.win_TCA.add(vbox)
             self.win_TCA.show_all()     
         return
-        
+
     def aboutInfo(self, widget):
         dialog=Gtk.Dialog('Info',self.window,0,(_("_OK"), Gtk.ResponseType.DELETE_EVENT))
         dialog.set_icon_from_file(cfg.iconWindow)
