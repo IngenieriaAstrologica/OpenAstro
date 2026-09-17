@@ -649,25 +649,35 @@ of crashing.
 
 ---
 
-## Bi-wheel view for Solar Return & Secondary Progressions — 2026-09-17
+## Bi-wheel view and Chart View selector — 2026-09-17
 
 ### Change
 - **Solar Return** and **Secondary Progressions** are now drawn as a **bi-wheel**
   by default: the natal chart on the inside and the return / progressed chart on
   the outside (reusing the transit ring), instead of a single wheel.
 - New **Chart Type → Chart View** radio submenu to switch the current bi-wheel
-  between **Both**, **Inner only** (natal) and **Outer only** (the return or the
-  progressed chart).
+  between **Both**, **Inner only** and **Outer only**.
+- The selector covers all four bi-wheel charts: **Solar Return**, **Secondary
+  Progressions**, **Transit Chart** and **Synastry**. "Inner only" always shows
+  the natal chart; "Outer only" shows the return, the progressed chart, the
+  transit moment or the partner's chart respectively.
 
 ### How it works
-- `localToSolar()` and `localToSecondaryProgression()` copy the derived chart into
-  the transit slots (`t_*`), set `type="Transit"`, and record which single-wheel
-  type "Outer only" should use (`biwheel_single` = `Solar` / `SecondaryProgression`).
-- `solarView()` applies the chosen mode by reusing the existing render paths —
-  `Transit` (both), `Radix` (inner) and `Solar` / `SecondaryProgression` (outer) —
-  and redraws. It only acts while a solar return or secondary progression is on
-  screen; `specialRadix` / `specialTransit` clear the marker when you leave.
+- Each bi-wheel chart copies its outer chart into the transit slots (`t_*`) and
+  sets `type="Transit"`, then records two markers: `solar_active` (a bi-wheel is
+  on screen, so Chart View applies) and `biwheel_single` (which single-wheel type
+  "Outer only" must render — `Solar`, `SecondaryProgression` or `TransitOuter`).
+  This is done by `localToSolar()`, `localToSecondaryProgression()`,
+  `specialTransit()` and `openDatabaseSelectReturn()` (Synastry).
+- `solarView()` applies the chosen mode by reusing the render paths: `Transit`
+  (both), `Radix` (inner) and the recorded `biwheel_single` type (outer), then
+  redraws. It does nothing unless a bi-wheel is on screen, and `specialRadix()`
+  clears the markers when you go back to a plain natal chart.
+- `TransitOuter` is a new render type: it draws the `t_*` chart on its own, with
+  its own houses, like a radix of that moment — needed because transits and
+  synastry had no existing single-wheel type for their outer chart.
 
 ### Files changed
-- `openastro` — `localToSolar`, `localToSecondaryProgression`, the `Chart View`
-  submenu and the `solarView` handler
+- `openastro` — `localToSolar`, `localToSecondaryProgression`, `specialTransit`,
+  `openDatabaseSelectReturn`, the `TransitOuter` branch in `makeSVG`, the
+  `Chart View` submenu and the `solarView` handler

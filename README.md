@@ -14,6 +14,7 @@
 Una herramienta completa para el cálculo y trazado de cartas astrológicas:
 
 - 🪐 **Cartas natales, de tránsitos, sinastría, combinadas y compuestas.**
+- 🔄 **Revolución solar y progresiones secundarias en doble rueda** (natal dentro, carta derivada fuera), con el selector **Chart View** para ver solo la interior, solo la exterior o ambas — también en tránsitos y sinastría (añadido en este fork).
 - ☄️ **Cuerpos adicionales:** Quirón, Pholus, Ceres, Palas, Juno y Vesta.
 - ⊗ **Puntos y Lotes:** Nodos Norte/Sur, Lilith y los **Lotes de Fortuna, Espíritu e Infortunio** (añadidos en este fork).
 - 🌍 **Atlas de ciudades:** online (geonames) y offline (~150.000 ciudades, incluido).
