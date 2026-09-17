@@ -1265,6 +1265,14 @@ class openAstroInstance:
         #ZOOM 1 = 100%
         self.zoom=1
         self.type="Radix"
+        #bi-wheel state for Chart View (Both / Inner only / Outer only):
+        #Solar Return, Secondary Progressions, Transit Chart and Synastry
+        #are shown as bi-wheels (natal inside, derived chart outside in t_*)
+        #while solar_active is True; biwheel_single tells "Outer only"
+        #which single-wheel type to render ("Solar",
+        #"SecondaryProgression" or "TransitOuter")
+        self.solar_active=False
+        self.biwheel_single="Solar"
         
         #Default dpi for svg is set per-handle when the file is loaded (setSVG)
 
@@ -1415,6 +1423,12 @@ class openAstroInstance:
         elif self.type == "SecondaryProgression":
             module_data = ephemeris.ephData(self.sp_year,self.sp_month,self.sp_day,self.sp_hour,self.sp_geolon,self.sp_geolat,self.sp_altitude,self.planets,self.zodiac,db.astrocfg,houses_override=self.houses_override)               
             
+        elif self.type == "TransitOuter":
+            #single-wheel view of the outer chart only ("Outer only" for
+            #Transit Chart / Synastry): render the t_* moment on its own
+            #with its own houses, like a Radix of that moment
+            module_data = ephemeris.ephData(self.t_year,self.t_month,self.t_day,self.t_hour,self.t_geolon,self.t_geolat,self.t_altitude,self.planets,self.zodiac,db.astrocfg)
+
         elif self.type == "Transit" or self.type == "Composite":
             module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
             t_module_data = ephemeris.ephData(self.t_year,self.t_month,self.t_day,self.t_hour,self.t_geolon,self.t_geolat,self.t_altitude,self.planets,self.zodiac,db.astrocfg)
@@ -3020,8 +3034,8 @@ class mainWindow:
         special_menu.append(mi(_('Combine Chart'), lambda w: self.openDatabaseSelect(_("Select for Combine"), "Combine"), 'Combine'))
         special_menu.append(mi(_('Solar Return'), self.specialSolar, 'Solar'))
         special_menu.append(mi(_('Secondary Progressions'), self.specialSecondaryProgression, 'SecondaryProgression'))
-        #bi-wheel view selector for Solar Return / Secondary Progression:
-        #both, natal (inner) only, or outer only
+        #bi-wheel view selector for Solar Return / Secondary Progression /
+        #Transit Chart / Synastry: both, natal (inner) only, or outer only
         special_menu.append(Gtk.SeparatorMenuItem())
         srv_top, srv_menu = submenu(_('Chart View'))
         srv_group = None
@@ -3222,7 +3236,8 @@ class mainWindow:
         return
 
     def solarView(self, widget, mode):
-        #switch a solar-return chart between natal-only, return-only and both;
+        #switch a bi-wheel chart (solar return, secondary progression,
+        #transit or synastry) between inner-only, outer-only and both;
         #the radio fires 'toggled' for both items, so act only on the active one
         if not widget.get_active():
             return
@@ -3242,7 +3257,15 @@ class mainWindow:
         self.draw.setSVG(self.tempfilename)
         return
 
-        
+    def _resetChartViewBoth(self):
+        #a fresh bi-wheel defaults to the Both view; setting the radio
+        #may emit 'toggled' and redraw via solarView, which is harmless
+        #because the caller redraws right after with the new data
+        items = getattr(self, '_srv_items', None)
+        if items:
+            items[0][0].set_active(True)
+        return
+
     def doExport(self, widget):
 
         chooser = Gtk.FileChooserDialog(parent=self.window,title=None,action=Gtk.FileChooserAction.SAVE,
@@ -3351,7 +3374,11 @@ class mainWindow:
             
     def specialTransit(self, widget):
         openAstro.type="Transit"
-        openAstro.solar_active=False
+        #Transit Chart is a bi-wheel (natal inside, transit outside),
+        #so enable Chart View; "Outer only" renders the transit
+        #moment alone via the TransitOuter type
+        openAstro.solar_active=True
+        openAstro.biwheel_single="TransitOuter"
         openAstro.t_geolon=float(openAstro.home_geolon)
         openAstro.t_geolat=float(openAstro.home_geolat)
         
@@ -3373,6 +3400,8 @@ class mainWindow:
         #make svg with transit
         openAstro.charttype="%s (%s-%02d-%02d %02d:%02d)" % (openAstro.label["transit"],dt.year,dt.month,dt.day,dt.hour,dt.minute)
         openAstro.transit=True
+        #a fresh transit chart defaults to the bi-wheel view
+        self._resetChartViewBoth()
         openAstro.makeSVG()
         self.draw.queue_draw()
         self.draw.setSVG(self.tempfilename) 
@@ -3422,7 +3451,7 @@ class mainWindow:
         openAstro.localToSolar(intyear)
         self.win_SS.destroy()
         #a fresh solar return defaults to the bi-wheel view
-        self._srv_items[0][0].set_active(True)
+        self._resetChartViewBoth()
         self.updateChart()
         return
     
@@ -3502,6 +3531,8 @@ class mainWindow:
         dt  = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()),int(entry['h'].get_text()),int(entry['m'].get_text()))
         openAstro.localToSecondaryProgression(dt)
         self.win_SSP.destroy()
+        #a fresh progression defaults to the bi-wheel view
+        self._resetChartViewBoth()
         self.updateChart()
         return
     
@@ -4236,6 +4267,11 @@ class mainWindow:
         #synastry
         if type == "Synastry":
             openAstro.type="Transit"
+            #Synastry is a bi-wheel (natal inside, partner outside),
+            #so enable Chart View; "Outer only" renders the partner
+            #alone via the TransitOuter type
+            openAstro.solar_active=True
+            openAstro.biwheel_single="TransitOuter"
             openAstro.t_name=str(list["name"])
             openAstro.t_year=int(list["year"])
             openAstro.t_month=int(list["month"])
@@ -4248,10 +4284,13 @@ class mainWindow:
             openAstro.t_timezone=float(list["timezone"])
             openAstro.charttype="%s (%s)" % (openAstro.label["synastry"],openAstro.t_name)
             openAstro.transit=True
+            #a fresh synastry defaults to the bi-wheel view
+            self._resetChartViewBoth()
             openAstro.makeSVG()
             
         elif type == "Composite":
             openAstro.type="Composite"
+            openAstro.solar_active=False
             openAstro.t_name=str(list["name"])
             openAstro.t_year=int(list["year"])
             openAstro.t_month=int(list["month"])
@@ -4268,6 +4307,7 @@ class mainWindow:
             
         elif type == "Combine":
             openAstro.type="Combine"
+            openAstro.solar_active=False
             openAstro.t_name=str(list["name"])
             openAstro.t_year=int(list["year"])
             openAstro.t_month=int(list["month"])
@@ -4944,6 +4984,7 @@ class mainWindow:
         openAstro.transit=False
         openAstro.name=_("Here and Now")
         openAstro.type="Radix"
+        openAstro.solar_active=False
         self.LLat.set_text(str(lat))
         self.LLon.set_text(str(lon))
         self.LLoc.set_text(str(loc))
@@ -5656,6 +5697,7 @@ class mainWindow:
 
     def updateChartList(self, b, list):
         openAstro.type="Radix"
+        openAstro.solar_active=False
         openAstro.charttype=openAstro.label["radix"]
         openAstro.name=str(list["name"])
         openAstro.year=int(list["year"])
@@ -6336,6 +6378,7 @@ class mainWindow:
         #update chart data
         openAstro.charttype=openAstro.label["radix"]
         openAstro.type="Radix"
+        openAstro.solar_active=False
         openAstro.transit=False
         self.updateChartData()
         
