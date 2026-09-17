@@ -15,6 +15,8 @@ Una herramienta completa para el cálculo y trazado de cartas astrológicas:
 
 - 🪐 **Cartas natales, de tránsitos, sinastría, combinadas y compuestas.**
 - 🔄 **Revolución solar y progresiones secundarias en doble rueda** (natal dentro, carta derivada fuera), con el selector **Chart View** para ver solo la interior, solo la exterior o ambas — también en tránsitos y sinastría (añadido en este fork).
+- 🌗 **Carta de dodecatemorias en doble rueda** (radix dentro, dodecatemorias fuera, calculadas como en Morinus).
+- 🧭 **Direcciones primarias topocéntricas** (sistema Polich-Page) en doble rueda: clave de Naibod, Ptolomeo o arco solar en AR; directas o conversas; carta eclíptica, ascensional o mixta (como en carta-natal.es); y rejilla con orbe de arco en GMS y marca de aplicativa/separativa.
 - ☄️ **Cuerpos adicionales:** Quirón, Pholus, Ceres, Palas, Juno y Vesta.
 - ⊗ **Puntos y Lotes:** Nodos Norte/Sur, Lilith y los **Lotes de Fortuna, Espíritu e Infortunio** (añadidos en este fork).
 - 🌍 **Atlas de ciudades:** online (geonames) y offline (~150.000 ciudades, incluido).
@@ -53,7 +55,7 @@ Con **Ubuntu + WSLg** instalado, haz doble clic en **`OpenAstro.bat`** (que ejec
 - **Ficheros de Swiss Ephemeris** (p. ej. `seas_18.se1`) → colócalos en `~/.openastro.org/swiss_ephemeris`.
 
 ## 🔧 Cambios de este fork
-Los cambios respecto a OpenAstro.org 1.1.57 están detallados en **[CHANGELOG.md](CHANGELOG.md)**: corrección del dibujado de planetas, nodos y Lilith; coordenadas editables; colores de signos por elemento; y la incorporación de los **Lotes de Fortuna, Espíritu e Infortunio** (por jipejavier@gmail.com).
+Los cambios respecto a OpenAstro.org 1.1.57 están detallados en **[CHANGELOG.md](CHANGELOG.md)**: corrección del dibujado de planetas, nodos y Lilith; coordenadas editables; colores de signos por elemento; la incorporación de los **Lotes de Fortuna, Espíritu e Infortunio** (por jipejavier@gmail.com); y las nuevas cartas en doble rueda de **dodecatemorias** y **direcciones primarias topocéntricas** (claves Naibod/Ptolomeo/arco solar, directas/conversas, medidas eclíptica/ascensional/mixta, rejilla con orbe de arco y aplicativa/separativa).
 
 ## 🙏 Créditos
 - Software original **OpenAstro.org** por **Pelle van der Scheer** — <http://www.openastro.org>
