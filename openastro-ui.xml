@@ -40,6 +40,7 @@
         <menuitem action="Composite"/>
         <menuitem action="Combine"/>
         <menuitem action="Solar"/>
+        <menuitem action="Lunar"/>
         <menuitem action="SecondaryProgression"/>
         <menuitem action="Dodecatemoria"/>
         <menuitem action="Directed"/>

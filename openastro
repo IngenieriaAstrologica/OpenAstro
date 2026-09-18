@@ -1266,11 +1266,11 @@ class openAstroInstance:
         self.zoom=1
         self.type="Radix"
         #bi-wheel state for Chart View (Both / Inner only / Outer only):
-        #Solar Return, Secondary Progressions, Transit Chart, Synastry,
-        #Dodecatemoria and Primary Directions are shown as bi-wheels (natal
-        #inside, derived chart outside in t_*) while solar_active is True;
+        #Solar Return, Lunar Return, Secondary Progressions, Transit Chart,
+        #Synastry, Dodecatemoria and Primary Directions are shown as bi-wheels
+        #(natal inside, derived chart outside in t_*) while solar_active is True;
         #biwheel_single tells "Outer only" which single-wheel type to render
-        #("Solar", "SecondaryProgression", "Dodecatemoria", "Directed"
+        #("Solar", "Lunar", "SecondaryProgression", "Dodecatemoria", "Directed"
         #or "TransitOuter")
         self.solar_active=False
         self.biwheel_single="Solar"
@@ -1359,6 +1359,56 @@ class openAstroInstance:
         self.biwheel_single = "Solar"
         self.type = "Transit"
         openAstro.charttype="%s (%s-%02d-%02d %02d:%02d:%02d UTC)" % (openAstro.label["solar"],self.s_year,self.s_month,self.s_day,dt_new.hour,dt_new.minute,dt_new.second)
+        openAstro.transit=True
+        return
+
+    def localToLunar(self, year, month):
+        #tropical month in seconds (Moon back to its natal longitude)
+        lunarmonthsecs = 27.321661 * 86400.0
+        dprint("localToLunar: from %s-%s-%s to %s-%02d" % (self.year,self.month,self.day,year,month))
+        h,m,s = self.decHour(self.hour)
+        #start mid-month at natal hour: converges to the return nearest
+        #mid-month (returns recur every ~27.3 days, so exactly one is near)
+        dt_new = datetime.datetime(year, month, 15, h, m, s)
+        mdata = ephemeris.ephData(dt_new.year,dt_new.month,dt_new.day,self.decHourJoin(dt_new.hour,dt_new.minute,dt_new.second),self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+        #NOTE: geocentric Moon, never topocentric: lunar parallax reaches
+        #almost a degree and would eat any tight orb (measured doctrine).
+        moondiff = (self.planets_degree_ut[1] - mdata.planets_degree_ut[1] + 180.0) % 360.0 - 180.0
+        dt_new = dt_new + datetime.timedelta(seconds=(moondiff / 360.0) * lunarmonthsecs)
+        #refine with measured lunar speed (two-point, 3 passes: seconds precision)
+        for k in range(3):
+            m1 = ephemeris.ephData(dt_new.year,dt_new.month,dt_new.day,self.decHourJoin(dt_new.hour,dt_new.minute,dt_new.second),self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+            dt_plus = dt_new + datetime.timedelta(hours=1)
+            m2 = ephemeris.ephData(dt_plus.year,dt_plus.month,dt_plus.day,self.decHourJoin(dt_plus.hour,dt_plus.minute,dt_plus.second),self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+            speed = ((m2.planets_degree_ut[1] - m1.planets_degree_ut[1] + 180.0) % 360.0 - 180.0) / 3600.0
+            if abs(speed) < 1e-9:
+                break
+            diff = (self.planets_degree_ut[1] - m1.planets_degree_ut[1] + 180.0) % 360.0 - 180.0
+            dt_new = dt_new + datetime.timedelta(seconds=diff / speed)
+        mdata = ephemeris.ephData(dt_new.year,dt_new.month,dt_new.day,self.decHourJoin(dt_new.hour,dt_new.minute,dt_new.second),self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+        dprint("localToLunar: natal moon %s return moon %s" % (self.planets_degree_ut[1], mdata.planets_degree_ut[1]))
+
+        self.l_year = dt_new.year
+        self.l_month = dt_new.month
+        self.l_day = dt_new.day
+        self.l_hour = self.decHourJoin(dt_new.hour,dt_new.minute,dt_new.second)
+        self.l_geolon = self.geolon
+        self.l_geolat = self.geolat
+        self.l_altitude = self.altitude
+        #show the lunar return as a bi-wheel (natal inside, return outside)
+        #exactly like the solar return: natal stays in self.*, return goes
+        #into self.t_* as the outer wheel
+        self.t_year = self.l_year
+        self.t_month = self.l_month
+        self.t_day = self.l_day
+        self.t_hour = self.l_hour
+        self.t_geolon = self.l_geolon
+        self.t_geolat = self.l_geolat
+        self.t_altitude = self.l_altitude
+        self.solar_active = True
+        self.biwheel_single = "Lunar"
+        self.type = "Transit"
+        openAstro.charttype="%s (%s-%02d-%02d %02d:%02d:%02d UTC)" % (_("Lunar Return"),self.l_year,self.l_month,self.l_day,dt_new.hour,dt_new.minute,dt_new.second)
         openAstro.transit=True
         return
         
@@ -1542,6 +1592,11 @@ class openAstroInstance:
             #Transit Chart / Synastry): render the t_* moment on its own
             #with its own houses, like a Radix of that moment
             module_data = ephemeris.ephData(self.t_year,self.t_month,self.t_day,self.t_hour,self.t_geolon,self.t_geolat,self.t_altitude,self.planets,self.zodiac,db.astrocfg)
+
+        elif self.type == "Lunar":
+            #single-wheel view of the lunar return ("Outer only" for the
+            #Lunar Return chart): the return moment on its own
+            module_data = ephemeris.ephData(self.l_year,self.l_month,self.l_day,self.l_hour,self.l_geolon,self.l_geolat,self.l_altitude,self.planets,self.zodiac,db.astrocfg)
 
         elif self.type == "Dodecatemoria":
             #single-wheel view of the dodecatemoria positions ("Outer only"
@@ -3292,12 +3347,13 @@ class mainWindow:
         special_menu.append(mi(_('Composite Chart'), lambda w: self.openDatabaseSelect(_("Select for Composite"), "Composite"), 'Composite'))
         special_menu.append(mi(_('Combine Chart'), lambda w: self.openDatabaseSelect(_("Select for Combine"), "Combine"), 'Combine'))
         special_menu.append(mi(_('Solar Return'), self.specialSolar, 'Solar'))
+        special_menu.append(mi(_('Lunar Return'), self.specialLunar, 'Lunar'))
         special_menu.append(mi(_('Secondary Progressions'), self.specialSecondaryProgression, 'SecondaryProgression'))
         special_menu.append(mi(_('Dodecatemoria Chart'), self.specialDodecatemoria, 'Dodecatemoria'))
         special_menu.append(mi(_('Primary Directions'), self.specialDirected, 'Directed'))
-        #bi-wheel view selector for Solar Return / Secondary Progression /
-        #Transit Chart / Synastry / Dodecatemoria / Primary Directions: both,
-        #natal (inner) only, or outer only
+        #bi-wheel view selector for Solar Return / Lunar Return /
+        #Secondary Progression / Transit Chart / Synastry / Dodecatemoria /
+        #Primary Directions: both, natal (inner) only, or outer only
         special_menu.append(Gtk.SeparatorMenuItem())
         srv_top, srv_menu = submenu(_('Chart View'))
         srv_group = None
@@ -3714,6 +3770,68 @@ class mainWindow:
         openAstro.localToSolar(intyear)
         self.win_SS.destroy()
         #a fresh solar return defaults to the bi-wheel view
+        self._resetChartViewBoth()
+        self.updateChart()
+        return
+
+    def specialLunar(self, widget):
+        # create a new window
+        self.win_SL = Gtk.Dialog()
+        self.win_SL.set_icon_from_file(cfg.iconWindow)
+        self.win_SL.set_title(_("Select month for Lunar Return"))
+        self.win_SL.connect("delete_event", lambda w,e: self.win_SL.destroy())
+        self.win_SL.move(150,150)
+        self.win_SL.set_border_width(5)
+        self.win_SL.set_size_request(340,140)
+
+        #create a table
+        table = Gtk.Table(n_rows=2, n_columns=2, homogeneous=False)
+        table.set_border_width(10)
+
+        #options (last used month remembered in astrocfg)
+        now = datetime.datetime.now()
+        table.attach(Gtk.Label(label=_("Select month for Lunar Return")), 0, 2, 0, 1, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
+        entry={}
+        def last(key, default):
+            val = db.getAstrocfg(key)
+            return val if val is not None else default
+        entry['Y']=Gtk.Entry()
+        entry['Y'].set_max_length(4)
+        entry['Y'].set_width_chars(4)
+        entry['Y'].set_text(last('lunar_Y', str(now.year)))
+        table.attach(entry['Y'], 0, 1, 1, 2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
+        entry['M']=Gtk.Entry()
+        entry['M'].set_max_length(2)
+        entry['M'].set_width_chars(2)
+        entry['M'].set_text(last('lunar_M', '%02d'%(now.month)))
+        table.attach(entry['M'], 1, 2, 1, 2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
+
+        #make the ui layout with ok button
+        self.win_SL.vbox.pack_start(table, True, True, 0)
+
+        #ok button
+        button = Gtk.Button.new_with_mnemonic(_("_OK"))
+        button.connect("clicked", self.specialLunarSubmit, entry)
+        button.set_can_default(True)
+        self.win_SL.action_area.pack_start(button, True, True, 0)
+        button.grab_default()
+
+        #cancel button
+        button = Gtk.Button.new_with_mnemonic(_("_Cancel"))
+        button.connect("clicked", lambda w: self.win_SL.destroy())
+        self.win_SL.action_area.pack_start(button, True, True, 0)
+
+        self.win_SL.show_all()
+        return
+
+    def specialLunarSubmit(self, widget, entry):
+        intyear = int(entry['Y'].get_text())
+        intmonth = int(entry['M'].get_text())
+        db.setAstrocfg('lunar_Y', entry['Y'].get_text())
+        db.setAstrocfg('lunar_M', entry['M'].get_text())
+        openAstro.localToLunar(intyear, intmonth)
+        self.win_SL.destroy()
+        #a fresh lunar return defaults to the bi-wheel view
         self._resetChartViewBoth()
         self.updateChart()
         return
