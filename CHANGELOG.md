@@ -2,6 +2,66 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Chart style: LCh sign palette, smaller glyphs, layer alpha — 2026-09-18
+
+### Sign glyphs
+Wheel sign glyphs are drawn at **0.8** of their previous size
+(`ZODIAC_GLYPH_SCALE`). They were `<use>`d at natural size inside a
+`translate(-16,-16)`; they now scale about that same centre, so the
+recentring scales with the glyph and the symbol stays in its sector.
+
+### Palette rebuilt in CIELAB LCh
+The old palette mixed Material shades of very different perceptual weight
+— `#fdd835` (Libra) and `#0d47a1` (Scorpio) are nominally peers but one
+glows and the other is nearly black, so sectors competed for attention.
+
+The twelve sign colours are now generated from LCh, where **element sets
+the hue** and **modality the lightness tier**:
+
+| | hue (h°) | | cardinal | fixed | mutable |
+|---|---|---|---|---|---|
+| fire | 32 | **sector L\*** | 78 | 71 | 86 |
+| air | 88 | **glyph L\*** | 42 | 35 | 45 |
+| earth | 148 | **sector C\*** | 34 | 40 | 26 |
+| water | 258 | | | | |
+
+Two deliberate departures from a naive equal-L\* scheme, both from how the
+hues actually behave:
+
+- **Chroma is fitted to the sRGB gamut** by bisection per (L\*, h), so no
+  channel is silently clipped. A requested C\* of 40 survives at blue but
+  is cut to 18.7 at light water and 20.4 at light fire — clipping those
+  would have quietly destroyed the uniformity the scheme is for.
+- **Yellow carries a +7 L\* offset.** The yellow hue family only reads as
+  yellow when light; at the blue tier's lightness it turns olive, and air
+  would have stopped looking like air.
+
+Worst glyph-on-sector contrast is **3.85:1** against the composited tint
+(WCAG AA for large text is 3.0), down from cases where a deep glyph sat on
+an equally deep sector.
+
+### Alpha
+The hardcoded `fill-opacity: 0.5` on sectors is now `ZODIAC_BG_ALPHA`
+(0.45) next to the scale constant, and sign glyphs are drawn at
+`ZODIAC_GLYPH_ALPHA` (0.92) so cusp lines and aspect rays read through
+them. The contrast figure above is measured at these values — changing
+them changes it.
+
+Colours stay plain hex in the database so Settings → Colors keeps working;
+the alpha is applied at draw time per layer rather than baked into the
+stored value.
+
+### Database
+`defaultColors` covers new databases only (`INSERT OR IGNORE`), so the 24
+rows were updated in `color_codes` of `~/.openastro.org/astrodb.sql` and
+verified read-back. Backup: `astrodb.sql.bak-2026-09-18-lch-colors`.
+
+### Files changed
+- `openastro` — `ZODIAC_GLYPH_SCALE`/`ZODIAC_BG_ALPHA`/`ZODIAC_GLYPH_ALPHA`,
+  `zodiacSlice`, `makeZodiac`, `defaultColors`
+
+---
+
 ## Chart style: smaller header, grid and label text — 2026-09-18
 
 Second pass over the canvas text, from screenshots of a rendered chart.

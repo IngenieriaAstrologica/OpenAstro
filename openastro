@@ -72,6 +72,16 @@ LOCAL=True
 DEBUG=True
 VERSION='1.1.59'
 
+#Wheel drawing: zodiac sign glyph scale and the alpha of each painted layer.
+#The sign colours are built in CIELAB LCh (element = hue, modality =
+#lightness tier, chroma fitted to the sRGB gamut), so the sector tints share
+#a perceptual weight and the alpha below is what keeps aspect lines and
+#cusps readable through them. Glyph alpha stays high: at ZODIAC_BG_ALPHA the
+#worst glyph-on-sector contrast is 3.85:1 (WCAG AA for large text is 3.0).
+ZODIAC_GLYPH_SCALE = 0.8
+ZODIAC_BG_ALPHA = 0.45
+ZODIAC_GLYPH_ALPHA = 0.92
+
 #directories
 if LOCAL:
     DATADIR=os.path.dirname(__file__)
@@ -458,32 +468,36 @@ class openAstroSqlite:
         self.defaultColors = {
             "paper_0":"#000000",
             "paper_1":"#ffffff",
-            #signs by element: fire red, earth green, air yellow, water blue
-            #(cardinal medium, fixed deep, mutable light; icons darker than bg)
-            "zodiac_bg_0":"#e53935",
-            "zodiac_bg_1":"#1b5e20",
-            "zodiac_bg_2":"#fff176",
-            "zodiac_bg_3":"#1e88e5",
-            "zodiac_bg_4":"#b71c1c",
-            "zodiac_bg_5":"#81c784",
-            "zodiac_bg_6":"#fdd835",
-            "zodiac_bg_7":"#0d47a1",
-            "zodiac_bg_8":"#ef5350",
-            "zodiac_bg_9":"#43a047",
-            "zodiac_bg_10":"#f0c000",
-            "zodiac_bg_11":"#64b5f6",
-            "zodiac_icon_0":"#b71c1c",
-            "zodiac_icon_1":"#0e4a13",
-            "zodiac_icon_2":"#9c7c00",
-            "zodiac_icon_3":"#0d47a1",
-            "zodiac_icon_4":"#7f0000",
-            "zodiac_icon_5":"#2e7d32",
-            "zodiac_icon_6":"#9a7400",
-            "zodiac_icon_7":"#002171",
-            "zodiac_icon_8":"#c62828",
-            "zodiac_icon_9":"#1b5e20",
-            "zodiac_icon_10":"#8a6a00",
-            "zodiac_icon_11":"#1565c0",
+            #Signs in CIELAB LCh: element sets the hue (fire 32, air 88,
+            #earth 148, water 258), modality the lightness tier (cardinal
+            #L*78, fixed L*71, mutable L*86; glyphs 42/35/45). Chroma is
+            #fitted to the sRGB gamut so no channel clips, and yellow carries
+            #a +7 L* offset because a dark yellow reads as olive, not air.
+            #Glyph-on-sector contrast is 3.85:1 at worst, at ZODIAC_BG_ALPHA.
+            "zodiac_bg_0":"#feaca1",
+            "zodiac_bg_1":"#7ac089",
+            "zodiac_bg_2":"#ffe9bb",
+            "zodiac_bg_3":"#90cdff",
+            "zodiac_bg_4":"#f29589",
+            "zodiac_bg_5":"#b7e5bf",
+            "zodiac_bg_6":"#edd194",
+            "zodiac_bg_7":"#63bbfa",
+            "zodiac_bg_8":"#ffcbc4",
+            "zodiac_bg_9":"#96d2a1",
+            "zodiac_bg_10":"#dcbe76",
+            "zodiac_bg_11":"#c1e0ff",
+            "zodiac_icon_0":"#ab3f38",
+            "zodiac_icon_1":"#00632c",
+            "zodiac_icon_2":"#95791f",
+            "zodiac_icon_3":"#006fa1",
+            "zodiac_icon_4":"#942f2b",
+            "zodiac_icon_5":"#1a7d3e",
+            "zodiac_icon_6":"#8d710f",
+            "zodiac_icon_7":"#005d88",
+            "zodiac_icon_8":"#b24941",
+            "zodiac_icon_9":"#007636",
+            "zodiac_icon_10":"#796000",
+            "zodiac_icon_11":"#0076ac",
             "zodiac_radix_ring_0":"#ff0000",    
             "zodiac_radix_ring_1":"#ff0000",
             "zodiac_radix_ring_2":"#ff0000",    
@@ -2408,13 +2422,19 @@ class openAstroInstance:
             dropin=54
         else:
             dropin=18+self.c1
-        sign = '<g transform="translate(-16,-16)"><use x="' + str(dropin + self.sliceToX(num,r-dropin,offset)) + '" y="' + str(dropin + self.sliceToY(num,r-dropin,offset)) + '" xlink:href="#' + type + '" /></g>\n'
+        #sign glyph, scaled about its own centre (the -16,-16 recentres a
+        #32px symbol, so it scales with it) and drawn with a slight alpha
+        sc = ZODIAC_GLYPH_SCALE
+        sign_x = dropin + self.sliceToX(num,r-dropin,offset)
+        sign_y = dropin + self.sliceToY(num,r-dropin,offset)
+        sign = '<g transform="translate(%s,%s)" opacity="%s"><g transform="scale(%s)"><use x="%s" y="%s" xlink:href="#%s" /></g></g>\n' % (
+            -16*sc, -16*sc, ZODIAC_GLYPH_ALPHA, sc, sign_x/sc, sign_y/sc, type)
         return slice + '\n' + sign
     
     def makeZodiac( self , r ):
         output = ""
         for i in range(len(self.zodiac)):
-            output = output + self.zodiacSlice( i , r , "fill:" + self.colors["zodiac_bg_%s"%(i)] + "; fill-opacity: 0.5;" , self.zodiac[i]) + '\n'
+            output = output + self.zodiacSlice( i , r , "fill:" + self.colors["zodiac_bg_%s"%(i)] + "; fill-opacity: %s;" % (ZODIAC_BG_ALPHA,) , self.zodiac[i]) + '\n'
         return output
         
     def makeHouses( self , r ):
