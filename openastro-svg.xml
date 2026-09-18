@@ -23,6 +23,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="$svgWidth" height="$svgHeight"
  viewBox="$viewbox" preserveAspectRatio="xMidYMid">
 <title>Esoteric OpenAstro</title>
+<style>text { font-family: 'Fira Code Nerd Font', 'Fira Code', monospace; }</style>
 
 <g transform="translate($cfgTranslate)">
 <g transform="rotate($cfgRotate)">
