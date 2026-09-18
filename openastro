@@ -3271,9 +3271,7 @@ class openAstroInstance:
             if self.planets[i]['visible'] == 1:
                 #start of line              
                 out = out + '<g transform="translate(%s,%s)">' % (offset,li)
-                #planet text
-                out = out + '<text text-anchor="end" style="fill:%s; font-size: 8px;">%s</text>' % (self.colors['paper_0'],self.planets[i]['label'])
-                #planet symbol
+                #planet symbol (the name is left out: the glyph identifies it)
                 out = out + '<g transform="translate(5,-8)"><use transform="scale(0.4)" xlink:href="#'+self.svgSafeHref(self.planets[i]['name'])+'" /></g>'
                 #planet degree (9 chars of DMS from x=19 must clear the zodiac
                 #glyph at x=60: at 7px monospace they end at ~57)
@@ -3297,12 +3295,11 @@ class openAstroInstance:
         out = '<g transform="translate(610,-40)">'
         li=10
         for i in range(12):
-            if i < 9:
-                cusp = '&#160;&#160;'+str(i+1)
-            else:
-                cusp = str(i+1)
+            #cusp number only: the "Cusp" word is dropped, and end-anchoring
+            #at x=40 right-aligns 1..12 without padding
+            cusp = str(i+1)
             out += '<g transform="translate(0,'+str(li)+')">'
-            out += '<text text-anchor="end" x="40" style="fill:%s; font-size: 8px;">%s %s:</text>' % (self.colors['paper_0'],self.label['cusp'],cusp)
+            out += '<text text-anchor="end" x="40" style="fill:%s; font-size: 8px;">%s:</text>' % (self.colors['paper_0'],cusp)
             out += '<g transform="translate(40,-8)"><use transform="scale(0.3)" xlink:href="#'+self.zodiac[self.houses_sign[i]]+'" /></g>'
             out += '<text x="53" style="fill:%s; font-size: 7px;"> %s</text>' % (self.colors['paper_0'],self.dec2deg(self.houses_degree[i]))
             out += '</g>\n'

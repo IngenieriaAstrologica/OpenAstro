@@ -2,6 +2,26 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Chart style: planet names and "Cusp" dropped from the grids — 2026-09-18
+
+The planet grid no longer prints the body's name ("Sun", "Lot of
+Fortune", ...) — the glyph already identifies it — and the houses grid
+prints `1:` instead of `Cusp  1:`. Rows keep their existing column
+positions: the name was end-anchored at `x=0` and so extended left of the
+block, and dropping it frees that margin instead of leaving a hole.
+
+The `&#160;&#160;` padding on cusps 1-9 went with it. It existed to line
+up `Cusp  1:` under `Cusp 10:`, but the text is end-anchored at `x=40`,
+which right-aligns the numbers on its own.
+
+`label['cusp']` is still used by the monthly Timeline table, so the
+translation stays.
+
+### Files changed
+- `openastro` — `makePlanetGrid`, `makeHousesGrid`
+
+---
+
 ## Chart style: LCh sign palette, smaller glyphs, layer alpha — 2026-09-18
 
 ### Sign glyphs
