@@ -2,6 +2,38 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Chart style: smaller canvas text, aspect grid moved right — 2026-09-18
+
+The per-planet texts were colliding with their neighbours. Planets grouped
+closer than `planet_drange` (3.4°) sit at a wheel radius of 146-166px, so
+their arc separation is only ~9px, while `12°34'` at 7px in a monospace
+face is ~25px wide — three neighbours' worth.
+
+Sizes reduced on the wheel: planet degree+minute 7px → **5px** (halo
+stroke 2px → 1.5px, which at 5px would otherwise swallow the glyphs),
+R/S marks 10px → **7px** natal and **6px** on the outer wheel (whose
+glyph is only 12px across), outer-wheel degrees 8px → **6px**, house
+numbers 11px → **9px**.
+
+Positions: the R/S mark moved up from the glyph's bottom-right corner to
+its right flank (`y+12` → `y+4` natal, `y+10` → `y+2` outer), and the
+degree+minute moved closer under the glyph (`+7,+23` → `+3,+17`).
+
+The natal aspect grid starts 50px further right (`xindent` 380 → 430).
+It grows right and up by 14px per visible planet, so with all 20 shown it
+spans 280px and 430 keeps it inside the 772.2px viewBox.
+
+Note: smaller type reduces the collisions but cannot remove them for tight
+conjunctions — at ~9px of arc even 5px text overlaps. Widening
+`planet_drange` or dropping the wheel to degrees-only (`type="1"`) would
+be the next lever.
+
+### Files changed
+- `openastro` — `makeHouses`, `makePlanets` (natal and transit branches),
+  `makeAspectGrid`
+
+---
+
 ## Fix: house numbers crashed the wheel drawing — 2026-09-18
 
 "Smaller house numbers in cusp sign color" (67d8d11) built the `<text>`

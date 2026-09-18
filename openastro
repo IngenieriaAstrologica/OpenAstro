@@ -2479,7 +2479,7 @@ class openAstroInstance:
                     t_linecolor = self.colors['houses_transit_line']            
                 xtext = self.sliceToX( 0 , (r-8) , t_text_offset ) + 8
                 ytext = self.sliceToY( 0 , (r-8) , t_text_offset ) + 8
-                path = path + '<text style="fill: ' + self.colors["zodiac_icon_%s" % self.t_houses_sign[i]] + '; fill-opacity: .9; font-size: 11px; font-weight: bold;"><tspan x="'+str(xtext-3)+'" y="'+str(ytext+3)+'">'+str(i+1)+'</tspan></text>\n'
+                path = path + '<text style="fill: ' + self.colors["zodiac_icon_%s" % self.t_houses_sign[i]] + '; fill-opacity: .9; font-size: 9px; font-weight: bold;"><tspan x="'+str(xtext-3)+'" y="'+str(ytext+3)+'">'+str(i+1)+'</tspan></text>\n'
                 path = path + '<line x1="'+str(t_x1)+'" y1="'+str(t_y1)+'" x2="'+str(t_x2)+'" y2="'+str(t_y2)+'" style="stroke: '+t_linecolor+'; stroke-width: 2px; stroke-opacity:.3;"/>\n'                
                 
             #if transit         
@@ -2493,7 +2493,7 @@ class openAstroInstance:
             xtext = self.sliceToX( 0 , (r-dropin) , text_offset ) + dropin #was 132
             ytext = self.sliceToY( 0 , (r-dropin) , text_offset ) + dropin #was 132
             path = path + '<line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: #000000; stroke-width: 1px; stroke-dasharray:3,2; stroke-opacity:.4;"/>\n'
-            path = path + '<text style="fill: ' + self.colors["zodiac_icon_%s" % self.houses_sign[i]] + '; fill-opacity: .9; font-size: 11px; font-weight: bold;"><tspan x="'+str(xtext-3)+'" y="'+str(ytext+3)+'">'+str(i+1)+'</tspan></text>\n'
+            path = path + '<text style="fill: ' + self.colors["zodiac_icon_%s" % self.houses_sign[i]] + '; fill-opacity: .9; font-size: 9px; font-weight: bold;"><tspan x="'+str(xtext-3)+'" y="'+str(ytext+3)+'">'+str(i+1)+'</tspan></text>\n'
             #arrowhead at the outer end of Ascendant (cusp 1) and MC (cusp 10)
             if xr == 12 and (i == 0 or i == 9):
                 dx = x2 - x1
@@ -2717,12 +2717,12 @@ class openAstroInstance:
                 output = output + '<g transform="translate(-'+str(12*scale)+',-'+str(12*scale)+')"><g transform="scale('+str(scale)+')"><use x="' + str(planet_x*(1/scale)) + '" y="' + str(planet_y*(1/scale)) + '" xlink:href="#' + self.svgSafeHref(self.planets[i]['name']) + '" /></g></g>\n'
             #degree and minute at the bottom-right of the planet (small
             #with halo so aspect lines behind stay readable)
-            output += '<text x="%s" y="%s" style="fill: %s; font-size: 7px; stroke: %s; stroke-width: 2px; paint-order: stroke;">%s</text>\n' % (planet_x+7, planet_y+23, self.planets[i]['color'], self.colors['paper_1'], self.dec2deg(self.planets_degree[i], type="2"))
+            output += '<text x="%s" y="%s" style="fill: %s; font-size: 5px; stroke: %s; stroke-width: 1.5px; paint-order: stroke;">%s</text>\n' % (planet_x+3, planet_y+17, self.planets[i]['color'], self.colors['paper_1'], self.dec2deg(self.planets_degree[i], type="2"))
             #retrograde / stationary letter, bold bottom-right (Fira Code
             #Nerd Font via the canvas stylesheet)
             mark = self.motion_mark(i, self.planets_retrograde, self.planets_stationary)
             if mark:
-                output += '<text x="%s" y="%s" style="fill: %s; font-weight: bold; font-size: 10px;">%s</text>\n' % (planet_x+8, planet_y+12, self.planets[i]['color'], mark)
+                output += '<text x="%s" y="%s" style="fill: %s; font-weight: bold; font-size: 7px;">%s</text>\n' % (planet_x+8, planet_y+4, self.planets[i]['color'], mark)
             
         #make transit degut and display planets
         if self.type == "Transit":
@@ -2796,7 +2796,7 @@ class openAstroInstance:
                 #retrograde / stationary letter on the outer wheel
                 mark = self.motion_mark(i, self.t_planets_retrograde, self.t_planets_stationary)
                 if mark:
-                    output += '<text x="%s" y="%s" style="fill: %s; font-weight: bold; font-size: 10px;">%s</text>\n' % (planet_x+6, planet_y+10, self.planets[i]['color'], mark)
+                    output += '<text x="%s" y="%s" style="fill: %s; font-weight: bold; font-size: 6px;">%s</text>\n' % (planet_x+5, planet_y+2, self.planets[i]['color'], mark)
                 #transit planet line
                 x1 = self.sliceToX( 0 , r+3 , t_offset ) - 3
                 y1 = self.sliceToY( 0 , r+3 , t_offset ) - 3
@@ -2827,7 +2827,7 @@ class openAstroInstance:
                 degree=int(t_offset)
                 output += '<g transform="translate(%s,%s)">' % (deg_x,deg_y)
                 output += '<text transform="rotate(%s)" text-anchor="%s' % (rotate,textanchor)
-                output += '" style="fill: '+self.planets[i]['color']+'; font-size: 8px;">'+self.dec2deg(self.t_planets_degree[i],type="1")
+                output += '" style="fill: '+self.planets[i]['color']+'; font-size: 6px;">'+self.dec2deg(self.t_planets_degree[i],type="1")
                 output += '</text></g>\n'
             
             #check transit
@@ -3187,7 +3187,10 @@ class openAstroInstance:
     def makeAspectGrid( self , r ):
         out=""
         style='stroke:%s; stroke-width: 1px; stroke-opacity:.6; fill:none' % (self.colors['paper_0'])
-        xindent=380
+        #bottom-left corner of the triangle; it grows right and up by `box`
+        #per visible planet, so with all 20 shown it needs 280px and must
+        #start left of 772.2-280 to stay inside the viewBox
+        xindent=430
         yindent=468
         box=14
         revr=list(range(len(self.planets)))
