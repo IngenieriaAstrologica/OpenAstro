@@ -2,6 +2,35 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Docs: roadmap synced with the code — 2026-09-18
+
+`TODO.md` had gone stale: it still listed the whole of wave 1 as pending
+(fixed stars, antiscia, lunar return, ascensional transits — all four
+branches merged into `main`, 0 commits ahead) and claimed the heliocentric
+chart still needed a UI, when `helio` has long been one of the position-type
+options in preferences. All of that moved to the "already in" block.
+
+`README.md` gained the wave-1 features it never listed: lunar return, fixed
+stars (222-star catalog), antiscia/contraantiscia charts, ascensional
+transits and the R/S motion marks.
+
+`AGENTS.md` marks wave 1 complete and defines wave 2 with its merge order.
+
+Also recorded in `TODO.md`: **atacires** as the next feature, with the
+finding that drives its design — in Morinus, *atacir* is the Spanish name
+for *profection* (`Morinus SE/mtexts.py:37,50` → "Atacires del C-12";
+`:253-254` → placidian vs zodiacal annual variants). So the atacir engine,
+the profections engine and the 1°/year symbolic directions are one and the
+same rigid `360/N` degrees-per-year rotation (`Morinus SE/profections.py`,
+`K = 12.17473968` days/degree = 365.2421904/30). Wave 2 therefore builds one
+generic engine with a configurable cycle and derives C-12 (profections) and
+C-360 (symbolic) as presets, instead of three separate implementations.
+
+### Files changed
+- `TODO.md`, `AGENTS.md` (untracked working docs), `README.md`
+
+---
+
 ## Chart style: thin black cusps with ASC/MC arrows — 2026-09-18
 
 House cusp lines are thin black (1px); the As/Mc wheel glyphs are replaced
