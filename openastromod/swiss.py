@@ -108,6 +108,23 @@ FIXED_STARS = [
 	('Alpheratz', 'Alpheratz', 'Apz'),
 	('Algenib', 'Algenib', 'Agn'),
 	('Matar', 'Matar', 'Mat'),
+	('Baten Kaitos', 'Baten Kaitos', 'Bka'),
+	('Foramen', 'Foramen', 'For'),
+	('Hadar', 'Hadar', 'Had'),
+	('Shaula', 'Shaula', 'Sha'),
+	('Mimosa', 'Mimosa', 'Mim'),
+	('Acrux', 'Acrux', 'Acx'),
+	('Aludra', 'Aludra', 'Alu'),
+	('Wezen', 'Wezen', 'Wez'),
+	('Adhara', 'Adhara', 'Adh'),
+	('Naos', 'Naos', 'Nao'),
+	('Aspidiske', 'Aspidiske', 'Asp'),
+	('Miaplacidus', 'Miaplacidus', 'Mia'),
+	('Avior', 'Avior', 'Avi'),
+	('Alkaid', 'Alkaid', 'Akd'),
+	('Merak', 'Merak', 'Mek'),
+	('Suhail al Muhlif', 'Suhail al Muhlif', 'Sam'),
+	('Kaus Media', 'Kaus Meridionalis', 'Kau'),
 ]
 
 def normalize_dodec(lon):
