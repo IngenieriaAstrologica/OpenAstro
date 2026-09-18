@@ -804,28 +804,33 @@ of crashing.
 
 ---
 
-## Feature: Antiscia table — 2026-09-18
+## Feature: Antiscia chart — 2026-09-18
 
 ### Change
-- New **Tables → Antiscia**: body | natal | antiscion | contraantiscion
-  for visible bodies and the 12 cusps, with print/PDF like the other tables.
+- New **Chart Type → Antiscia Chart**: a **bi-wheel** with the radix on the
+  inside and the antiscion positions outside (reuses the transit ring).
+  Chart View Both/Inner/Outer applies, with its own `Antiscia` single-wheel
+  type (antiscia on the natal house frame). Opposition lines to the outer
+  wheel mark contraantiscion directions (contraantiscion = antiscion + 180°).
 - Antiscion = reflection on the Cancer 0° / Capricorn 0° axis (declination
-  symmetry), contraantiscion = antiscion + 180°, following Morinus
-  (`antiscia.calc`). Antiscia are tropical by definition: with a sidereal
-  zodiac the input converts to tropical and back via the current ayanamsa.
+  symmetry), following Morinus (`antiscia.calc`). Antiscia are tropical by
+  definition: with a sidereal zodiac the input converts to tropical and
+  back via the current ayanamsa.
 
 ### How it works
 - `openastromod/swiss.py` — `calc_antiscion(lon, ayan)`, `ayanamsa`
   attribute in `ephData` (from `swe.get_ayanamsa_ut` when sidereal),
   per-body and per-cusp antiscion/contraantiscion lists.
-- `openastro.makeSVG()` re-derives them from the final longitudes (covers
-  Composite); `tableAntiscia()` renders the SVG table.
+- `openastro.localToAntiscia()` derives the outer wheel from the radix into
+  `t_*` and sets `type="Transit"`, `solar_active=True`,
+  `biwheel_single="Antiscia"`; `makeSVG()` re-derives `t_*` from the stored
+  lists on every redraw, and the `Antiscia` branch renders "Outer only".
 - Verified 16/16 against replicated Morinus branch logic, tropical and
-  sidereal (symmetry ant(ant(lon)) == lon holds).
+  sidereal (symmetry ant(ant(lon)) == lon holds to 5.7e-14).
 
 ### Files changed
-- `openastro` — antiscia recompute in `makeSVG`, `tableAntiscia`, Tables
-  menu entry
+- `openastro` — `localToAntiscia`, `specialAntiscia`, the `Antiscia` branch
+  and outer-wheel override in `makeSVG`, Special menu entry
 - `openastromod/swiss.py` — `calc_antiscion`, ayanamsa, antiscia lists
 - `openastro-ui.xml` — reference menu entry (file kept for reference only)
 
@@ -834,9 +839,10 @@ of crashing.
 ## Feature: Fixed Stars — 2026-09-18
 
 ### Change
-- New **Tables → Fixed Stars**: star | longitude | latitude | nearest
-  visible planet in conjunction within 1°, plus star markers with short
-  labels drawn on the chart wheel (own ring).
+- New **Tables → Fixed Stars**: only stars in conjunction (orb 1°) with a
+  visible planet or a cusp are listed (star | longitude | latitude |
+  conjunction), and only those are drawn as markers with short labels on
+  the outer ring edge.
 - Catalog of 14 major stars (Aldebaran, Algol, Antares, Regulus, Spica,
   Fomalhaut, Altair, Vega, Deneb, Betelgeuse, Rigel, Pollux, Arcturus,
   Sirius) computed with `swe_fixstar_ut` like Morinus (`fixstars.py`).
