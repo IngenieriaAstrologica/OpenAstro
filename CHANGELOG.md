@@ -2,6 +2,42 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Chart style: right-hand columns packed to the margin — 2026-09-18
+
+Removing the row labels left each column spending its old name width on
+nothing, so the three column blocks are repositioned as named constants
+(`GRID_LOTS_X`, `GRID_PLANETS_X`, `GRID_HOUSES_X`) instead of the literals
+that were buried in `makePlanetGrid` and `makeHousesGrid`.
+
+Everything on the page sits inside the template's `translate(50,50)`, so
+absolute x is 50 plus these. Measured extents:
+
+| Column | Was | Now | Gutter |
+|--------|-----|-----|--------|
+| Lots | 445-519 | 490-559 | 29 |
+| Planets | 565-639 | 588-657 | 29 |
+| Houses | 686-751 | unchanged | 21 (right margin) |
+
+The houses column is the widest and was already flush against the right
+margin, so it anchors the block and the other two pack up to it on an even
+gutter. The 21px right margin matches the header's 20px on the left.
+
+This also closes a latent overlap. The lots column runs down the top-right
+while the wheel bulges out to meet it; nine lot rows are possible
+(`swiss.py` indices 27-35), and at the ninth the wheel reaches x=470.7.
+The old x=445 would have put rows 8 and 9 inside the wheel — only the
+default set of four lots kept it from showing. At 490 the worst row clears
+by 19px.
+
+The transit/directed list stays at its own x: in Directed mode its second
+column carries the arc-orb text out to x=744, and moving it with the
+others would push it past the 772.2 viewBox.
+
+### Files changed
+- `openastro` — grid x constants, `makePlanetGrid`, `makeHousesGrid`
+
+---
+
 ## Chart style: planet names and "Cusp" dropped from the grids — 2026-09-18
 
 The planet grid no longer prints the body's name ("Sun", "Lot of

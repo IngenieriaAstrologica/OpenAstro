@@ -82,6 +82,17 @@ ZODIAC_GLYPH_SCALE = 0.8
 ZODIAC_BG_ALPHA = 0.45
 ZODIAC_GLYPH_ALPHA = 0.92
 
+#Right-hand columns, in the template's translate(50,50) frame (so absolute
+#x = 50 + these). Dropping the row labels freed the space each column used
+#to spend on its name, so the three are packed toward the right margin with
+#an even 24px gutter. The houses column is the widest and anchors the right
+#edge at ~751 absolute, leaving a 21px margin that matches the header's
+#20px on the left. The lots share makePlanetGrid's group, so their position
+#is expressed as an offset from the planets column.
+GRID_LOTS_X = 435
+GRID_PLANETS_X = 533
+GRID_HOUSES_X = 610
+
 #directories
 if LOCAL:
     DATADIR=os.path.dirname(__file__)
@@ -3260,14 +3271,15 @@ class openAstroInstance:
         return out
         
     def makePlanetGrid( self ):
-        out = '<g transform="translate(510,-40)">'
+        out = '<g transform="translate(%s,-40)">' % (GRID_PLANETS_X,)
         #loop over all planets
         li=10
         offset=0
         for i in range(len(self.planets)):
             if i == 27:
+                #lots restart a column of their own, to the left
                 li = 10
-                offset = -120
+                offset = GRID_LOTS_X - GRID_PLANETS_X
             if self.planets[i]['visible'] == 1:
                 #start of line              
                 out = out + '<g transform="translate(%s,%s)">' % (offset,li)
@@ -3292,7 +3304,7 @@ class openAstroInstance:
         return out
     
     def makeHousesGrid( self ):
-        out = '<g transform="translate(610,-40)">'
+        out = '<g transform="translate(%s,-40)">' % (GRID_HOUSES_X,)
         li=10
         for i in range(12):
             #cusp number only: the "Cusp" word is dropped, and end-anchoring
