@@ -43,12 +43,12 @@
         <menuitem action="Lunar"/>
         <menuitem action="SecondaryProgression"/>
         <menuitem action="Dodecatemoria"/>
+        <menuitem action="Antiscia"/>
         <menuitem action="Directed"/>
       </menu>
       <menu action="Tables">
         <menuitem action="MonthlyTimeline"/>
         <menuitem action="CuspAspects"/>
-        <menuitem action="Antiscia"/>
         <menuitem action="FixedStars"/>
       </menu>      
       <menu action="ZoomRadio">
