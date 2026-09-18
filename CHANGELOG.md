@@ -850,23 +850,21 @@ of crashing.
 ## Feature: Fixed Stars — 2026-09-18
 
 ### Change
-- New **Tables → Fixed Stars**: only stars in conjunction (orb 1°) with a
-  visible planet or a cusp are listed (star | longitude | latitude |
-  conjunction), and only those are drawn as markers with short labels on
-  the outer ring edge.
-- Catalog of 92 major stars (Aldebaran…Matar plus Baten Kaitos, Foramen,
-  Hadar, Shaula, Mimosa, Acrux, Aludra, Wezen, Adhara, Naos, Aspidiske,
-  Miaplacidus, Avior, Alkaid, Merak, Suhail al Muhlif and Kaus Media —
-  as `Kaus Meridionalis`; see `FIXED_STARS` in `openastromod/swiss.py`,
-  only Dschubba excluded: unresolvable name), computed with computed with `swe_fixstar_ut` like Morinus
-  (`fixstars.py`).
+- New **Tables → Fixed Stars**: only stars in conjunction with a visible
+  planet or a cusp are listed (star | longitude | latitude | conjunction),
+  and only those are drawn as markers with short labels on the outer ring
+  edge. Per-star orb by brightness: 2° under magnitude 1, 1° otherwise.
+- Catalog of 214 major stars (see `FIXED_STARS` in `openastromod/swiss.py`;
+  `Han`/`Marfik` excluded as mislabeled catalog lines, `Coxa` as a `Chertan`
+  duplicate, `Dschubba` included as `Isidis (Dschubba)`), computed with
+  `swe_fixstar_ut` like Morinus (`fixstars.py`).
   Needs the star catalog (`sefstars.txt`) in the ephemeris path;
   missing stars are skipped silently, so older catalogs simply show
   fewer stars (this swe build also falls back to `fixstars.cat`,
   and Spica is built in).
 - The catalog ships with the repo as `sefstars.txt` (Morinus data) and
   auto-installs into `~/.openastro.org/swiss_ephemeris` on first run if
-  missing, so all 75 resolve out of the box.
+  missing, so all 211 resolve out of the box.
 
 ### How it works
 - `openastromod/swiss.py` — `FIXED_STARS` catalog, per-star
