@@ -854,9 +854,12 @@ of crashing.
   visible planet or a cusp are listed (star | longitude | latitude |
   conjunction), and only those are drawn as markers with short labels on
   the outer ring edge.
-- Catalog of 75 major stars (Aldebaran…Matar; see `FIXED_STARS` in
-  `openastromod/swiss.py`, Dschubba and Kaus Media excluded: unresolvable
-  names), computed with `swe_fixstar_ut` like Morinus (`fixstars.py`).
+- Catalog of 92 major stars (Aldebaran…Matar plus Baten Kaitos, Foramen,
+  Hadar, Shaula, Mimosa, Acrux, Aludra, Wezen, Adhara, Naos, Aspidiske,
+  Miaplacidus, Avior, Alkaid, Merak, Suhail al Muhlif and Kaus Media —
+  as `Kaus Meridionalis`; see `FIXED_STARS` in `openastromod/swiss.py`,
+  only Dschubba excluded: unresolvable name), computed with computed with `swe_fixstar_ut` like Morinus
+  (`fixstars.py`).
   Needs the star catalog (`sefstars.txt`) in the ephemeris path;
   missing stars are skipped silently, so older catalogs simply show
   fewer stars (this swe build also falls back to `fixstars.cat`,
@@ -871,9 +874,9 @@ of crashing.
   versions differ), `fixed_*` attributes in `ephData`.
 - `openastro.makeFixedStars()` draws markers; `tableFixedStars()`
   renders the SVG table with print/PDF.
-- Verified with real ephemeris: the catalog resolves fully (73/75 with
-  the older bundled catalog; Facies/Acumen need the newer one) and
-  positions match references to 0.005°; empty catalog degrades to an
+- Verified with real ephemeris: the catalog resolves fully with the
+  bundled file (with older catalogs Facies/Acumen/Kaus Media are skipped)
+  and positions match references to 0.005°; empty catalog degrades to an
   empty list without errors.
 
 ### Files changed
