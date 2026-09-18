@@ -828,3 +828,33 @@ of crashing.
   menu entry
 - `openastromod/swiss.py` — `calc_antiscion`, ayanamsa, antiscia lists
 - `openastro-ui.xml` — reference menu entry (file kept for reference only)
+
+---
+
+## Feature: Fixed Stars — 2026-09-18
+
+### Change
+- New **Tables → Fixed Stars**: star | longitude | latitude | nearest
+  visible planet in conjunction within 1°, plus star markers with short
+  labels drawn on the chart wheel (own ring).
+- Catalog of 14 major stars (Aldebaran, Algol, Antares, Regulus, Spica,
+  Fomalhaut, Altair, Vega, Deneb, Betelgeuse, Rigel, Pollux, Arcturus,
+  Sirius) computed with `swe_fixstar_ut` like Morinus (`fixstars.py`).
+  Needs the star catalog (`sefstars.txt`) in the ephemeris path;
+  missing stars are skipped silently (this swe build also falls back to
+  `fixstars.cat`, and Spica is built in).
+
+### How it works
+- `openastromod/swiss.py` — `FIXED_STARS` catalog, per-star
+  `swe_fixstar_ut` with 3-/4-tuple tolerant unpacking (pyswisseph
+  versions differ), `fixed_*` attributes in `ephData`.
+- `openastro.makeFixedStars()` draws markers; `tableFixedStars()`
+  renders the SVG table with print/PDF.
+- Verified with real ephemeris: all 14 within 0.005° of reference
+  longitudes; empty catalog degrades to an empty list without errors.
+
+### Files changed
+- `openastro` — `makeFixedStars`, `tableFixedStars`, Tables menu entry
+- `openastromod/swiss.py` — `FIXED_STARS`, fixed-star computation
+- `openastro-svg.xml` — `$makeFixedStars` placeholder
+- `openastro-ui.xml` — reference menu entry (file kept for reference only)

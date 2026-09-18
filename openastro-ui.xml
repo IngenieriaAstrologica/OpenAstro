@@ -49,6 +49,7 @@
         <menuitem action="MonthlyTimeline"/>
         <menuitem action="CuspAspects"/>
         <menuitem action="Antiscia"/>
+        <menuitem action="FixedStars"/>
       </menu>      
       <menu action="ZoomRadio">
       	<menuitem action="z80"/>

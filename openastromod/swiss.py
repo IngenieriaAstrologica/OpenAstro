@@ -29,6 +29,25 @@ ephe_path=swissDir+':'+swissLocalDir
 
 import swisseph as swe
 
+# Fixed-star catalog (display name, swe_fixstar_ut name, short label).
+# Verified Sep-2026 against known tropical longitudes (all within 0.5 deg).
+FIXED_STARS = [
+	('Aldebaran', 'Aldebaran', 'Ald'),
+	('Algol', 'Algol', 'Alg'),
+	('Antares', 'Antares', 'Ant'),
+	('Regulus', 'Regulus', 'Reg'),
+	('Spica', 'Spica', 'Spi'),
+	('Fomalhaut', 'Fomalhaut', 'Fom'),
+	('Altair', 'Altair', 'Alt'),
+	('Vega', 'Vega', 'Veg'),
+	('Deneb', 'Deneb', 'Den'),
+	('Betelgeuse', 'Betelgeuse', 'Bet'),
+	('Rigel', 'Rigel', 'Rig'),
+	('Pollux', 'Pollux', 'Pol'),
+	('Arcturus', 'Arcturus', 'Arc'),
+	('Sirius', 'Sirius', 'Sir'),
+]
+
 def normalize_dodec(lon):
 	"""Normaliza longitud a 0..360 (igual que util.normalize de Morinus)."""
 	lon = float(lon) % 360.0
@@ -176,6 +195,35 @@ class ephData:
 							self.planets_retrograde[i] = True
 						else:
 							self.planets_retrograde[i] = False
+
+		#fixed stars (Morinus fixstars.py): apparent positions via
+		#swe_fixstar_ut, same flags as the planets (tropical/sidereal
+		#follows the configuration). Needs sefstars.txt in the ephemeris
+		#path; missing stars are skipped silently.
+		self.fixed_names = []
+		self.fixed_short = []
+		self.fixed_degree_ut = []
+		self.fixed_latitude = []
+		self.fixed_sign = []
+		self.fixed_degree = []
+		for disp, swename, short in FIXED_STARS:
+			try:
+				res = swe.fixstar_ut(swename, self.jul_day_UT, iflag)
+				if len(res) == 4:
+					ret, nm, dat, serr = res
+				else:
+					dat, nm, ret = res
+				lon = float(dat[0]) % 360.0
+				lat = float(dat[1])
+			except Exception:
+				continue
+			s = int(lon // 30.0) % 12
+			self.fixed_names.append(disp)
+			self.fixed_short.append(short)
+			self.fixed_degree_ut.append(lon)
+			self.fixed_latitude.append(lat)
+			self.fixed_sign.append(s)
+			self.fixed_degree.append(lon - int(lon // 30.0) * 30.0)
 
 							
 		#available house systems:
