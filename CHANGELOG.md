@@ -2,6 +2,38 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Chart style: outer wheel cusps thin, dashed and single-coloured — 2026-09-18
+
+The outer wheel now matches the radix treatment introduced in "thin black
+cusps with ASC/MC arrows", instead of keeping the old heavy solid look:
+
+- **Thin dashed cusps.** `stroke-width: 2px` solid at 30% opacity becomes
+  **1px dashed** (`stroke-dasharray:3,2`) at 40%, the same values the radix
+  wheel uses.
+- **One colour for every cusp.** The Ascendant, MC, Descendant and IC used
+  to take their own colour from `planets[23..26]` while the other eight
+  cusps used `houses_transit_line`; all twelve now use
+  `houses_transit_line` (blue by default, still editable in
+  Settings → Colors).
+- **As/Mc glyphs replaced by arrowheads.** The outer wheel drew the `As`
+  and `Mc` text glyphs; they are skipped now (as the radix wheel already
+  skipped them) and an arrowhead marks the outer end of those two cusps.
+  It is drawn in the cusp colour and slightly smaller than the radix one
+  (L=8, W=6 against 10 and 8) to stay in proportion with the thinner line.
+
+The arrowhead trigonometry moved out of `makeHouses` into an `arrowhead()`
+method now that both wheels need it, and the per-angle `linecolor` block
+was removed: after this change nothing read it — the radix wheel draws
+every cusp black and the outer wheel uses the single colour.
+
+Ds and Ic keep their glyphs on both wheels, as before; only the two angles
+that get an arrow lose theirs.
+
+### Files changed
+- `openastro` — new `arrowhead()`, `makeHouses`, `makePlanets` (transit branch)
+
+---
+
 ## Chart style: right-hand columns packed to the margin — 2026-09-18
 
 Removing the row labels left each column spending its old name width on

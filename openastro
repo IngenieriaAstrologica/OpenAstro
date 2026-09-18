@@ -2448,6 +2448,18 @@ class openAstroInstance:
             output = output + self.zodiacSlice( i , r , "fill:" + self.colors["zodiac_bg_%s"%(i)] + "; fill-opacity: %s;" % (ZODIAC_BG_ALPHA,) , self.zodiac[i]) + '\n'
         return output
         
+    def arrowhead( self , x1 , y1 , x2 , y2 , color , L=10.0 , W=8.0 ):
+        #filled triangle at (x2,y2), pointing along the x1->x2 direction:
+        #marks the Ascendant and MC ends of a cusp line in place of a glyph
+        dx = x2 - x1
+        dy = y2 - y1
+        norm = math.sqrt(dx*dx + dy*dy) or 1.0
+        ux, uy = dx / norm, dy / norm
+        px, py = -uy, ux
+        bx, by = x2 - ux * L, y2 - uy * L
+        return '<polygon points="%s,%s %s,%s %s,%s" style="fill: %s;"/>\n' % (
+            x2, y2, bx + px * W / 2, by + py * W / 2, bx - px * W / 2, by - py * W / 2, color)
+
     def makeHouses( self , r ):
         path = ""
         if db.astrocfg["houses_system"] == "G":
@@ -2476,17 +2488,8 @@ class openAstroInstance:
             else:
                 text_offset = offset + int(self.degreeDiff( self.houses_degree_ut[0], self.houses_degree_ut[(xr-1)] ) / 2 )
 
-            #mc, asc, dsc, ic
-            if i == 0:
-                linecolor=self.planets[23]['color']
-            elif i == 9:
-                linecolor=self.planets[24]['color'] 
-            elif i == 6:
-                linecolor=self.planets[25]['color']
-            elif i == 3:
-                linecolor=self.planets[26]['color']
-            else:
-                linecolor=self.colors['houses_radix_line']
+            #(the per-angle cusp colours are gone: the radix wheel draws every
+            #cusp thin black, the outer wheel one single colour)
 
             #transit houses lines
             if self.type == "Transit":
@@ -2503,16 +2506,18 @@ class openAstroInstance:
                     t_text_offset = t_offset + int(self.degreeDiff( self.t_houses_degree_ut[(i+1)], self.t_houses_degree_ut[i] ) / 2 )
                 else:
                     t_text_offset = t_offset + int(self.degreeDiff( self.t_houses_degree_ut[0], self.t_houses_degree_ut[11] ) / 2 )
-                #linecolor
-                if i == 0 or i == 9 or i == 6 or i == 3:
-                    t_linecolor=linecolor
-                else:
-                    t_linecolor = self.colors['houses_transit_line']            
+                #outer wheel: one colour for every cusp, angles included
+                t_linecolor = self.colors['houses_transit_line']
                 xtext = self.sliceToX( 0 , (r-8) , t_text_offset ) + 8
                 ytext = self.sliceToY( 0 , (r-8) , t_text_offset ) + 8
                 path = path + '<text style="fill: ' + self.colors["zodiac_icon_%s" % self.t_houses_sign[i]] + '; fill-opacity: .9; font-size: 9px; font-weight: bold;"><tspan x="'+str(xtext-3)+'" y="'+str(ytext+3)+'">'+str(i+1)+'</tspan></text>\n'
-                path = path + '<line x1="'+str(t_x1)+'" y1="'+str(t_y1)+'" x2="'+str(t_x2)+'" y2="'+str(t_y2)+'" style="stroke: '+t_linecolor+'; stroke-width: 2px; stroke-opacity:.3;"/>\n'                
-                
+                path = path + '<line x1="'+str(t_x1)+'" y1="'+str(t_y1)+'" x2="'+str(t_x2)+'" y2="'+str(t_y2)+'" style="stroke: '+t_linecolor+'; stroke-width: 1px; stroke-dasharray:3,2; stroke-opacity:.4;"/>\n'
+                #arrowhead at the outer end of the outer wheel's Asc and MC,
+                #replacing their As/Mc glyphs; smaller than the radix one to
+                #stay in proportion with the thinner dashed cusp
+                if xr == 12 and (i == 0 or i == 9):
+                    path = path + self.arrowhead( t_x1, t_y1, t_x2, t_y2, t_linecolor, L=8.0, W=6.0 )
+
             #if transit         
             if self.type == "Transit":
                 dropin=84
@@ -2527,15 +2532,7 @@ class openAstroInstance:
             path = path + '<text style="fill: ' + self.colors["zodiac_icon_%s" % self.houses_sign[i]] + '; fill-opacity: .9; font-size: 9px; font-weight: bold;"><tspan x="'+str(xtext-3)+'" y="'+str(ytext+3)+'">'+str(i+1)+'</tspan></text>\n'
             #arrowhead at the outer end of Ascendant (cusp 1) and MC (cusp 10)
             if xr == 12 and (i == 0 or i == 9):
-                dx = x2 - x1
-                dy = y2 - y1
-                norm = math.sqrt(dx*dx + dy*dy) or 1.0
-                ux, uy = dx / norm, dy / norm
-                px, py = -uy, ux
-                L, W = 10.0, 8.0
-                bx, by = x2 - ux * L, y2 - uy * L
-                path = path + '<polygon points="%s,%s %s,%s %s,%s" style="fill: #000000;"/>\n' % (
-                    x2, y2, bx + px * W / 2, by + py * W / 2, bx - px * W / 2, by - py * W / 2)
+                path = path + self.arrowhead( x1, y1, x2, y2, '#000000' )
                         
         return path
     
@@ -2823,7 +2820,9 @@ class openAstroInstance:
                     t_offset = t_offset - 360
                 planet_x = self.sliceToX( 0 , (r-rplanet) , t_offset ) + rplanet
                 planet_y = self.sliceToY( 0 , (r-rplanet) , t_offset ) + rplanet
-                output = output + '<g transform="translate(-6,-6)"><g transform="scale(0.5)"><use x="' + str(planet_x*2) + '" y="' + str(planet_y*2) + '" xlink:href="#' + self.svgSafeHref(self.planets[i]['name']) + '" /></g></g>\n'
+                #As/Mc glyphs are replaced by the arrowheads on their cusps
+                if i not in (23, 24):
+                    output = output + '<g transform="translate(-6,-6)"><g transform="scale(0.5)"><use x="' + str(planet_x*2) + '" y="' + str(planet_y*2) + '" xlink:href="#' + self.svgSafeHref(self.planets[i]['name']) + '" /></g></g>\n'
                 #retrograde / stationary letter on the outer wheel
                 mark = self.motion_mark(i, self.t_planets_retrograde, self.t_planets_stationary)
                 if mark:
