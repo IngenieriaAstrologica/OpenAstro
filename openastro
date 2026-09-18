@@ -1698,6 +1698,8 @@ class openAstroInstance:
             self.t_planets_degree = t_module_data.planets_degree
             self.t_planets_degree_ut = t_module_data.planets_degree_ut
             self.t_planets_retrograde = t_module_data.planets_retrograde
+            self.t_planets_speed = list(getattr(t_module_data, 'planets_speed', [0.0] * len(self.t_planets_degree_ut)))
+            self.t_planets_stationary = list(getattr(t_module_data, 'planets_stationary', [False] * len(self.t_planets_degree_ut)))
             self.t_houses_degree = t_module_data.houses_degree
             self.t_houses_sign = t_module_data.houses_sign
             self.t_houses_degree_ut = t_module_data.houses_degree_ut
@@ -1714,6 +1716,8 @@ class openAstroInstance:
         self.planets_degree = module_data.planets_degree
         self.planets_degree_ut = module_data.planets_degree_ut
         self.planets_retrograde = module_data.planets_retrograde
+        self.planets_speed = list(getattr(module_data, 'planets_speed', [0.0] * len(self.planets_degree_ut)))
+        self.planets_stationary = list(getattr(module_data, 'planets_stationary', [False] * len(self.planets_degree_ut)))
         self.houses_degree = module_data.houses_degree
         self.houses_sign = module_data.houses_sign
         self.houses_degree_ut = module_data.houses_degree_ut
@@ -2493,6 +2497,15 @@ class openAstroInstance:
                         
         return path
     
+    #motion mark for wheel and grid: S when stationary, R when retrograde
+    #(stationary wins at the station), else no mark
+    def motion_mark(self, i, retrograde, stationary):
+        if i < len(stationary) and stationary[i]:
+            return 'S'
+        if i < len(retrograde) and retrograde[i]:
+            return 'R'
+        return ''
+
     def makePlanets( self , r ):
         
         planets_degut={}
@@ -2689,6 +2702,10 @@ class openAstroInstance:
                 scale=1
             #output planet          
             output = output + '<g transform="translate(-'+str(12*scale)+',-'+str(12*scale)+')"><g transform="scale('+str(scale)+')"><use x="' + str(planet_x*(1/scale)) + '" y="' + str(planet_y*(1/scale)) + '" xlink:href="#' + self.svgSafeHref(self.planets[i]['name']) + '" /></g></g>\n'
+            #retrograde / stationary letter
+            mark = self.motion_mark(i, self.planets_retrograde, self.planets_stationary)
+            if mark:
+                output += '<text x="%s" y="%s" style="fill: %s; font-size: 10px;">%s</text>\n' % (planet_x+10, planet_y-8, self.planets[i]['color'], mark)
             
         #make transit degut and display planets
         if self.type == "Transit":
@@ -2759,6 +2776,10 @@ class openAstroInstance:
                 planet_x = self.sliceToX( 0 , (r-rplanet) , t_offset ) + rplanet
                 planet_y = self.sliceToY( 0 , (r-rplanet) , t_offset ) + rplanet
                 output = output + '<g transform="translate(-6,-6)"><g transform="scale(0.5)"><use x="' + str(planet_x*2) + '" y="' + str(planet_y*2) + '" xlink:href="#' + self.svgSafeHref(self.planets[i]['name']) + '" /></g></g>\n'
+                #retrograde / stationary letter on the outer wheel
+                mark = self.motion_mark(i, self.t_planets_retrograde, self.t_planets_stationary)
+                if mark:
+                    output += '<text x="%s" y="%s" style="fill: %s; font-size: 10px;">%s</text>\n' % (planet_x+8, planet_y-6, self.planets[i]['color'], mark)
                 #transit planet line
                 x1 = self.sliceToX( 0 , r+3 , t_offset ) - 3
                 y1 = self.sliceToY( 0 , r+3 , t_offset ) - 3
@@ -3218,9 +3239,10 @@ class openAstroInstance:
                 out = out + '<text text-anchor="start" x="19" style="fill:%s; font-size: 10px;">%s</text>' % (self.colors['paper_0'],self.dec2deg(self.planets_degree[i]))
                 #zodiac
                 out = out + '<g transform="translate(60,-8)"><use transform="scale(0.3)" xlink:href="#'+self.zodiac[self.planets_sign[i]]+'" /></g>'                
-                #planet retrograde
-                if self.planets_retrograde[i]:
-                    out = out + '<g transform="translate(74,-6)"><use transform="scale(.5)" xlink:href="#retrograde" /></g>'                
+                #planet retrograde / stationary letter
+                mark = self.motion_mark(i, self.planets_retrograde, self.planets_stationary)
+                if mark:
+                    out = out + '<text x="74" y="2" style="fill:%s; font-size: 10px;">%s</text>' % (self.colors['paper_0'], mark)
 
                 #end of line
                 out = out + '</g>\n'
