@@ -51,6 +51,47 @@ def calc_dodecatemoria(lon):
 	# KeepBetweenLimit(rel,30) ya garantizado; KeepInZodiac al final
 	return normalize_dodec(30.0 * sign + 12.0 * rel)
 
+#Eje de antiscios (Morinus antiscia.Antiscia): Cancer 0 / Capricornio 0.
+CANCER0 = 90.0
+CAPRICORN0 = 270.0
+
+def calc_antiscion(lon, ayan=0.0):
+	"""Antiscion y contraantiscion segun Morinus (antiscia.calc).
+
+	Reflejo sobre el eje Cancer 0 / Capricornio 0 (simetria de
+	declinacion): la misma rama if/elif que Morinus, que equivale
+	a ant_trop = (180 - lon_trop) mod 360; contra = (ant + 180) mod 360.
+
+	ayan es el ayanamsa vigente cuando el zodiaco es sideral (0.0 en
+	tropical). Como los antiscios son tropicales por definicion, se
+	convierte la entrada a tropical (lon + ayan), se refleja, y se
+	devuelve al zodiaco configurado (ant_trop - ayan). Morinus hace
+	lo mismo partiendo de longitudes tropicales (resta ayan al final);
+	aqui la entrada ya viene en el zodiaco configurado, por eso se
+	suma ayan primero. En tropical (ayan=0) es identidad: f(lon).
+	"""
+	ayan = float(ayan)
+	if ayan:
+		lon_trop = normalize_dodec(float(lon) + ayan)
+	else:
+		lon_trop = normalize_dodec(lon)
+
+	if lon_trop == CANCER0 or lon_trop == CAPRICORN0:
+		ant_trop = lon_trop
+	elif lon_trop > CANCER0 and lon_trop < CAPRICORN0:
+		ant_trop = normalize_dodec(CAPRICORN0 + (CAPRICORN0 - lon_trop))
+	elif lon_trop < CANCER0:
+		ant_trop = normalize_dodec(CANCER0 + (CANCER0 - lon_trop))
+	else: # lon_trop > CAPRICORN0
+		ant_trop = normalize_dodec(CAPRICORN0 - (lon_trop - CAPRICORN0))
+
+	if ayan:
+		ant = normalize_dodec(ant_trop - ayan)
+	else:
+		ant = normalize_dodec(ant_trop)
+	cant = normalize_dodec(ant + 180.0)
+	return ant, cant
+
 class ephData:
 	def __init__(self,year,month,day,hour,geolon,geolat,altitude,planets,zodiac,openastrocfg,houses_override=None):
 		#ephemeris path (default "/usr/share/swisseph:/usr/local/share/swisseph")
@@ -106,6 +147,16 @@ class ephData:
 			iflag += swe.FLG_SIDEREAL
 			mode="SIDM_"+openastrocfg['siderealmode']
 			swe.set_sid_mode(getattr(swe,mode))
+
+		#ayanamsa vigente (0.0 en tropical): los antiscios son tropicales
+		#por definicion, asi que calc_antiscion() lo necesita para volver
+		#al zodiaco configurado (igual que Morinus antiscia.calc).
+		self.ayanamsa = 0.0
+		if(openastrocfg['zodiactype']=="sidereal"):
+			try:
+				self.ayanamsa = float(swe.get_ayanamsa_ut(self.jul_day_UT))
+			except Exception:
+				self.ayanamsa = 0.0
 
 		#compute a planet (longitude,latitude,distance,long.speed,lat.speed,speed)
 		for i in range(23):
@@ -397,6 +448,23 @@ class ephData:
 			s = int(v // 30.0) % 12
 			self.houses_dodecatemoria_sign.append(s)
 			self.houses_dodecatemoria.append(v - s * 30.0)
+
+		# --- Antiscia y contraantiscia (Morinus antiscia.calc) ---
+		# Reflejo sobre el eje Cancer 0 / Capricornio 0 (simetria de
+		# declinacion). Son tropicales por definicion: calc_antiscion()
+		# usa self.ayanamsa para volver al zodiaco configurado.
+		self.planets_antiscia_ut = []
+		self.planets_contra_ut = []
+		for v in self.planets_degree_ut:
+			a, c = calc_antiscion(v, self.ayanamsa)
+			self.planets_antiscia_ut.append(a)
+			self.planets_contra_ut.append(c)
+		self.houses_antiscia_ut = []
+		self.houses_contra_ut = []
+		for v in self.houses_degree_ut:
+			a, c = calc_antiscion(v, self.ayanamsa)
+			self.houses_antiscia_ut.append(a)
+			self.houses_contra_ut.append(c)
 
 		ddeg=moon-sun
 		if ddeg<0: ddeg+=360.0
