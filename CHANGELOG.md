@@ -810,8 +810,10 @@ of crashing.
 - New **Chart Type → Antiscia Chart**: a **bi-wheel** with the radix on the
   inside and the antiscion positions outside (reuses the transit ring).
   Chart View Both/Inner/Outer applies, with its own `Antiscia` single-wheel
-  type (antiscia on the natal house frame). Opposition lines to the outer
-  wheel mark contraantiscion directions (contraantiscion = antiscion + 180°).
+  type (antiscia on the natal house frame). A dialog selects **Antiscia**
+  or **Contraantiscia** (= antiscion + 180°) for the outer wheel, remembered
+  in `astrocfg`; opposition lines to an antiscion outer wheel also mark
+  contraantiscion directions.
 - Antiscion = reflection on the Cancer 0° / Capricorn 0° axis (declination
   symmetry), following Morinus (`antiscia.calc`). Antiscia are tropical by
   definition: with a sidereal zodiac the input converts to tropical and
@@ -825,6 +827,7 @@ of crashing.
   `t_*` and sets `type="Transit"`, `solar_active=True`,
   `biwheel_single="Antiscia"`; `makeSVG()` re-derives `t_*` from the stored
   lists on every redraw, and the `Antiscia` branch renders "Outer only".
+  `specialAntiscia()` dialog (antiscia/contraantiscia, remembered).
 - Verified 16/16 against replicated Morinus branch logic, tropical and
   sidereal (symmetry ant(ant(lon)) == lon holds to 5.7e-14).
 
