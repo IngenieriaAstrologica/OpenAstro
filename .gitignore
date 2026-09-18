@@ -38,5 +38,15 @@ desktop.ini
 # Backup files and Dropbox conflict copies (English and Spanish names)
 *~
 old/
+*.bak
 *conflicted copy*
 *Copia en conflicto*
+
+# Local working files, deliberately out of the repo:
+#   AGENTS.md  agent coordination notes — contains absolute local paths
+#   TODO.md    pending-features roadmap (move it into the repo if the
+#              roadmap should be public; it carries no personal data)
+#   README     leftover from upstream; the real one is README.md
+AGENTS.md
+TODO.md
+/README
