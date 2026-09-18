@@ -2479,7 +2479,7 @@ class openAstroInstance:
                     t_linecolor = self.colors['houses_transit_line']            
                 xtext = self.sliceToX( 0 , (r-8) , t_text_offset ) + 8
                 ytext = self.sliceToY( 0 , (r-8) , t_text_offset ) + 8
-                path = path + '<text style="fill: %s; fill-opacity: .9; font-size: 11px; font-weight: bold;"><tspan x="'+str(xtext-3)+'" y="'+str(ytext+3)+'">'+str(i+1)+'</tspan></text>\n' % (self.colors["zodiac_icon_%s" % self.t_houses_sign[i]])
+                path = path + '<text style="fill: ' + self.colors["zodiac_icon_%s" % self.t_houses_sign[i]] + '; fill-opacity: .9; font-size: 11px; font-weight: bold;"><tspan x="'+str(xtext-3)+'" y="'+str(ytext+3)+'">'+str(i+1)+'</tspan></text>\n'
                 path = path + '<line x1="'+str(t_x1)+'" y1="'+str(t_y1)+'" x2="'+str(t_x2)+'" y2="'+str(t_y2)+'" style="stroke: '+t_linecolor+'; stroke-width: 2px; stroke-opacity:.3;"/>\n'                
                 
             #if transit         
@@ -2493,7 +2493,7 @@ class openAstroInstance:
             xtext = self.sliceToX( 0 , (r-dropin) , text_offset ) + dropin #was 132
             ytext = self.sliceToY( 0 , (r-dropin) , text_offset ) + dropin #was 132
             path = path + '<line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: #000000; stroke-width: 1px; stroke-dasharray:3,2; stroke-opacity:.4;"/>\n'
-            path = path + '<text style="fill: %s; fill-opacity: .9; font-size: 11px; font-weight: bold;"><tspan x="'+str(xtext-3)+'" y="'+str(ytext+3)+'">'+str(i+1)+'</tspan></text>\n' % (self.colors["zodiac_icon_%s" % self.houses_sign[i]])
+            path = path + '<text style="fill: ' + self.colors["zodiac_icon_%s" % self.houses_sign[i]] + '; fill-opacity: .9; font-size: 11px; font-weight: bold;"><tspan x="'+str(xtext-3)+'" y="'+str(ytext+3)+'">'+str(i+1)+'</tspan></text>\n'
             #arrowhead at the outer end of Ascendant (cusp 1) and MC (cusp 10)
             if xr == 12 and (i == 0 or i == 9):
                 dx = x2 - x1

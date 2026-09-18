@@ -2,6 +2,25 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Fix: house numbers crashed the wheel drawing — 2026-09-18
+
+"Smaller house numbers in cusp sign color" (67d8d11) built the `<text>`
+element by concatenation but left the colour as a `%s` with the `%`
+operator at the very end of the expression. Python binds `%` to the last
+operand only, so the format was applied to the trailing
+`'</tspan></text>\n'` — a string with no placeholders — and every house
+number raised `TypeError: not all arguments converted during string
+formatting` instead of being drawn.
+
+The colour is now concatenated like the rest of the element. Both call
+sites were affected (transit ring and natal ring, `openastro:2479` and
+`:2493`).
+
+### Files changed
+- `openastro` — `makeSVG`, transit and natal house-number `<text>`
+
+---
+
 ## Docs: roadmap synced with the code — 2026-09-18
 
 `TODO.md` had gone stale: it still listed the whole of wave 1 as pending
