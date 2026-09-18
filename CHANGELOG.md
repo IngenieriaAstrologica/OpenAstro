@@ -776,3 +776,30 @@ of crashing.
 - `openastromod/primary.py` — new engine module
 - `openastromod/swiss.py` — latitudes, RAMC, birth JD
 - `openastro-ui.xml` — reference menu entry (file kept for reference only)
+
+---
+
+## Feature: Antiscia table — 2026-09-18
+
+### Change
+- New **Tables → Antiscia**: body | natal | antiscion | contraantiscion
+  for visible bodies and the 12 cusps, with print/PDF like the other tables.
+- Antiscion = reflection on the Cancer 0° / Capricorn 0° axis (declination
+  symmetry), contraantiscion = antiscion + 180°, following Morinus
+  (`antiscia.calc`). Antiscia are tropical by definition: with a sidereal
+  zodiac the input converts to tropical and back via the current ayanamsa.
+
+### How it works
+- `openastromod/swiss.py` — `calc_antiscion(lon, ayan)`, `ayanamsa`
+  attribute in `ephData` (from `swe.get_ayanamsa_ut` when sidereal),
+  per-body and per-cusp antiscion/contraantiscion lists.
+- `openastro.makeSVG()` re-derives them from the final longitudes (covers
+  Composite); `tableAntiscia()` renders the SVG table.
+- Verified 16/16 against replicated Morinus branch logic, tropical and
+  sidereal (symmetry ant(ant(lon)) == lon holds).
+
+### Files changed
+- `openastro` — antiscia recompute in `makeSVG`, `tableAntiscia`, Tables
+  menu entry
+- `openastromod/swiss.py` — `calc_antiscion`, ayanamsa, antiscia lists
+- `openastro-ui.xml` — reference menu entry (file kept for reference only)

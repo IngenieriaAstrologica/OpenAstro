@@ -1737,6 +1737,17 @@ class openAstroInstance:
                             self.planets_sign[i]=x
                             self.planets_degree[i] = self.planets_degree_ut[i] - deg_low
                             self.planets_retrograde[i] = False
+
+        #antiscia y contraantiscia (Morinus antiscia.calc): se recalculan
+        #sobre las longitudes finales para que el modo Composite tambien
+        #sea correcto (los antiscios son tropicales por definicion)
+        self.ayanamsa = float(getattr(module_data, 'ayanamsa', 0.0))
+        ant = [ephemeris.calc_antiscion(v, self.ayanamsa) for v in self.planets_degree_ut]
+        self.planets_antiscia_ut = [a for a, c in ant]
+        self.planets_contra_ut = [c for a, c in ant]
+        anth = [ephemeris.calc_antiscion(v, self.ayanamsa) for v in self.houses_degree_ut]
+        self.houses_antiscia_ut = [a for a, c in anth]
+        self.houses_contra_ut = [c for a, c in anth]
             
         
         #width and height from screen
@@ -3319,6 +3330,7 @@ class mainWindow:
         tables_top, tables_menu = submenu(_('Tables'))
         tables_menu.append(mi(_('Monthly Timeline'), self.tableMonthlyTimeline, 'MonthlyTimeline'))
         tables_menu.append(mi(_('Cusp Aspects'), self.tableCuspAspects, 'CuspAspects'))
+        tables_menu.append(mi(_('Antiscia'), self.tableAntiscia, 'Antiscia'))
         menubar.append(tables_top)
 
         #Zoom (radio)
@@ -4053,6 +4065,12 @@ class mainWindow:
             #draw svg for printing
             svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
             svg.set_dpi(900)
+            _rsvg_render(svg, cr)
+        elif(self.tabletype == "antiscia"):
+            self.tableAntiscia(None,printing)
+            #draw svg for printing
+            svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
+            svg.set_dpi(900)
             _rsvg_render(svg, cr)        
 
 
@@ -4447,6 +4465,136 @@ class mainWindow:
             vbox.pack_start(scrolledwindow,True,True,0)
             self.win_TCA.add(vbox)
             self.win_TCA.show_all()     
+        return
+
+    def tableAntiscia(self, widget, printing=None):
+        #Antiscia y contraantiscia segun Morinus (antiscia.calc): reflejo
+        #sobre el eje Cancer 0 / Capricornio 0. Tabla cuerpo | natal |
+        #antiscion | contraantiscion para cuerpos visibles y cuspides.
+        self.tabletype="antiscia"
+
+        def fmt_lon(lon_ut):
+            lon = float(lon_ut) % 360.0
+            sign = int(lon // 30.0) % 12
+            in_sign = lon - int(lon // 30.0) * 30.0
+            d = int(in_sign)
+            m = int((in_sign - d) * 60.0)
+            s = int(round((((in_sign - d) * 60.0) - m) * 60.0))
+            if s == 60:
+                s = 0
+                m += 1
+            if m == 60:
+                m = 0
+                d += 1
+                if d == 30:
+                    d = 0
+                    sign = (sign + 1) % 12
+            return "%02d\xb0%02d'%02d\" %s" % (d, m, s, openAstro.zodiac_short[sign])
+
+        rows = []
+        for i in range(len(openAstro.planets)):
+            try:
+                if openAstro.planets[i]['visible'] != 1:
+                    continue
+            except Exception:
+                pass
+            if i < len(openAstro.planets_degree_ut):
+                label = openAstro.planets[i].get('label', openAstro.planets[i].get('name', str(i)))
+                rows.append((label, openAstro.planets[i].get('name', str(i)),
+                    openAstro.planets_degree_ut[i],
+                    openAstro.planets_antiscia_ut[i],
+                    openAstro.planets_contra_ut[i]))
+        for c in range(12):
+            rows.append(("%s %s" % (openAstro.label.get('cusp', 'Cusp'), c + 1), None,
+                openAstro.houses_degree_ut[c],
+                openAstro.houses_antiscia_ut[c],
+                openAstro.houses_contra_ut[c]))
+
+        out = '<g transform="scale(1.1)">'
+        x0, y0 = 40, 110
+        col_body, col_natal, col_ant, col_contra = x0, x0 + 190, x0 + 360, x0 + 530
+        row_h = 22
+        textstyle = "font-size: 13px; fill: %s" % (openAstro.colors['paper_0'],)
+        headerstyle = "font-size: 14px; font-weight: bold; fill: %s" % (openAstro.colors['paper_0'],)
+        gridstyle = 'stroke:%s; stroke-width: 1px; stroke-opacity:.6; fill:none' % (openAstro.colors['paper_0'],)
+        out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_body, y0, headerstyle, _('Body'))
+        out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_natal, y0, headerstyle, _('Natal'))
+        out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_ant, y0, headerstyle, _('Antiscion'))
+        out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_contra, y0, headerstyle, _('Contraantiscion'))
+        y = y0 + 10
+        for (label, svgname, lon_ut, ant_ut, contra_ut) in rows:
+            y += row_h
+            out += '<rect x="%s" y="%s" width="660" height="%s" style="%s"/>\n' % (x0 - 25, y - 16, row_h, gridstyle)
+            if svgname:
+                try:
+                    out += '<use x="%s" y="%s" xlink:href="#%s" />\n' % (col_body - 26, y - 15, openAstro.svgSafeHref(svgname))
+                except Exception:
+                    pass
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_body, y, textstyle, label)
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_natal, y, textstyle, fmt_lon(lon_ut))
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_ant, y, textstyle, fmt_lon(ant_ut))
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_contra, y, textstyle, fmt_lon(contra_ut))
+        out += "</g>"
+
+        td = {}
+        td['paper_color_0']=openAstro.colors["paper_0"]
+        td['paper_color_1']=openAstro.colors["paper_1"]
+        for i in range(len(openAstro.planets)):
+            td['planets_color_%s'%(i)]=openAstro.colors["planet_%s"%(i)]
+        for i in range(12):
+            td['zodiac_color_%s'%(i)]=openAstro.colors["zodiac_icon_%s" %(i)]
+        for i in range(len(openAstro.aspects)):
+            td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
+        td['stringTitle'] = "Antiscia for %s"%(openAstro.name)
+
+        pages=1
+        pagesY = (1188 * pages)+10
+        if printing:
+            td['svgWidth'] = printing['width']
+            td['svgHeight'] = printing['height']
+            td['viewbox'] = "0 %s 840 1188" %( printing['pagenum']*(1188+10) )
+        else:
+            td['svgWidth'] = 1050
+            td['svgHeight'] = (td['svgWidth']/840.0)* pagesY
+            td['viewbox'] = "0 0 840 %s" %( pagesY )
+
+        td['data'] = out
+        td['pagesRect'] = '<rect x="0" y="0" width="840" height="1188" style="fill: %s;" />' % (openAstro.colors['paper_1'],)
+
+        f=open(cfg.xml_svg_table)
+        template=Template(f.read()).substitute(td)
+        f.close()
+        if printing:
+            f=open(cfg.tempfilenametableprint,"w")
+        else:
+            f=open(cfg.tempfilenametable,"w")
+        f.write(template)
+        f.close()
+
+        if printing == None:
+            self.win_TANT = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+            self.win_TANT.connect("destroy", lambda w: self.win_TANT.destroy())
+            self.win_TANT.set_title("OpenAstro.org Antiscia")
+            self.win_TANT.set_icon_from_file(cfg.iconWindow)
+            self.win_TANT.set_size_request(td['svgWidth']+30, 700)
+            self.win_TANT.move(50,50)
+            vbox = Gtk.VBox()
+            hbox = Gtk.HBox()
+            button = Gtk.Button(label=_('Print'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=1,pdf=False,window=self.win_TANT,name="antiscia-%s.pdf"%(openAstro.name)))
+            hbox.pack_start(button,False,False,0)
+            button = Gtk.Button(label=_('Save as PDF'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=1,pdf=True,window=self.win_TANT,name="antiscia-%s.pdf"%(openAstro.name)))
+            hbox.pack_start(button,False,False,0)
+            vbox.pack_start(hbox,False,False,0)
+            draw = drawSVG()
+            draw.setSVG(cfg.tempfilenametable)
+            scrolledwindow = Gtk.ScrolledWindow()
+            scrolledwindow.add(draw)
+            scrolledwindow.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            vbox.pack_start(scrolledwindow,True,True,0)
+            self.win_TANT.add(vbox)
+            self.win_TANT.show_all()
         return
 
     def aboutInfo(self, widget):
