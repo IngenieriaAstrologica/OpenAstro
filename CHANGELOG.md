@@ -2,6 +2,34 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Fix: South Node never showed its R — 2026-09-18
+
+The South Node is derived as `planets_degree_ut[10] - 180`, the North
+Node's opposite point, so it moves exactly as the North Node does and is
+retrograde whenever the node is — which, for the mean node, is always
+(~-0.0529°/day).
+
+It never carried the mark. The normalisation loop that closes the derived
+bodies (`for i in range(23,36)`) sets `retrograde=False`, `speed=0.0` and
+`stationary=False` for everything in that range, which is right for the
+lots and the hypothetical points but wrong for the South Node: it has real
+motion, it is just expressed relative to another body. Its motion is now
+restored from index 10 after that loop.
+
+This reaches the outer wheel too — the transit ring reads
+`t_module_data.planets_retrograde` from the same class.
+
+Verified against real ephemeris on 2026-09-18, 2026-01-05, 2025-06-22 and
+1990-03-11: separation from the North Node exactly 180.000° in each,
+speed inherited to the last digit (-0.052939, -0.052933, -0.052924,
+-0.052995 °/day), and `motion_mark` returning `R` for index 29 while the
+lots and the Sun still return nothing.
+
+### Files changed
+- `openastromod/swiss.py` — South Node motion after the derived-body loop
+
+---
+
 ## Chart style: outer wheel cusps thin, dashed and single-coloured — 2026-09-18
 
 The outer wheel now matches the radix treatment introduced in "thin black

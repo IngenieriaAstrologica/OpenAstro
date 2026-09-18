@@ -726,6 +726,13 @@ class ephData:
 						self.planets_speed[i] = 0.0
 						self.planets_stationary[i] = False
 
+		#The South Node (29) is the North Node's opposite point, so it moves
+		#with it. The loop above treats it as a derived body and zeroes its
+		#motion, which hid its retrogradation: restore it from index 10.
+		self.planets_retrograde[29] = self.planets_retrograde[10]
+		self.planets_speed[29] = self.planets_speed[10]
+		self.planets_stationary[29] = self.planets_stationary[10]
+
 		#lunar phase, anti-clockwise degrees between sun and moon
 		# --- Dodecatemorias (Morinus antiscia.calcDodecatemoria) ---
 		# Longitud dodecatemoria para cada cuerpo y cada cuspide.
