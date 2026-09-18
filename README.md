@@ -52,7 +52,7 @@ Con **Ubuntu + WSLg** instalado, haz doble clic en **`OpenAstro.bat`** (que ejec
 - **`geonames.sql`** (~31 MB) — atlas de ciudades offline (~150.000 lugares) para la búsqueda de ciudades.
 
 ## 📂 No incluido en el repositorio
-- **Ficheros de Swiss Ephemeris** (p. ej. `seas_18.se1`) → colócalos en `~/.openastro.org/swiss_ephemeris`.
+- **Ficheros de Swiss Ephemeris** (p. ej. `seas_18.se1`) → colócalos en `~/.openastro.org/swiss_ephemeris`. El catálogo de estrellas fijas (`sefstars.txt`, datos de Morinus) **sí** viene incluido y se instala solo al arrancar si falta.
 
 ## 🔧 Cambios de este fork
 Los cambios respecto a OpenAstro.org 1.1.57 están detallados en **[CHANGELOG.md](CHANGELOG.md)**: corrección del dibujado de planetas, nodos y Lilith; coordenadas editables; colores de signos por elemento; la incorporación de los **Lotes de Fortuna, Espíritu e Infortunio** (por jipejavier@gmail.com); y las nuevas cartas en doble rueda de **dodecatemorias** y **direcciones primarias topocéntricas** (claves Naibod/Ptolomeo/arco solar, directas/conversas, medidas eclíptica/ascensional/mixta, rejilla con orbe de arco y aplicativa/separativa).

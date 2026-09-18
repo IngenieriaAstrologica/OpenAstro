@@ -861,6 +861,9 @@ of crashing.
   missing stars are skipped silently, so older catalogs simply show
   fewer stars (this swe build also falls back to `fixstars.cat`,
   and Spica is built in).
+- The catalog ships with the repo as `sefstars.txt` (Morinus data) and
+  auto-installs into `~/.openastro.org/swiss_ephemeris` on first run if
+  missing, so all 75 resolve out of the box.
 
 ### How it works
 - `openastromod/swiss.py` — `FIXED_STARS` catalog, per-star
