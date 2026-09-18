@@ -5010,8 +5010,10 @@ class mainWindow:
             dd = int(bestdiff)
             mm = int(round((bestdiff - dd) * 60.0))
             conj = "%s %02d\xb0%02d'" % (best, dd, mm)
-            rows.append((openAstro.fixed_names[e], fmt_lon(lon),
+            rows.append((lon % 360.0, openAstro.fixed_names[e], fmt_lon(lon),
                 fmt_lat(openAstro.fixed_latitude[e]), conj))
+        #zodiac order, Aries to Pisces
+        rows.sort(key=lambda r: r[0])
 
         out = '<g transform="scale(1.1)">'
         x0, y0 = 40, 110
@@ -5025,10 +5027,10 @@ class mainWindow:
         out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_lat, y0, headerstyle, _('Latitude'))
         out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_conj, y0, headerstyle, _('Conjunction'))
         y = y0 + 10
-        for (name, slon, slat, sconj) in rows:
+        for (lon_ut, label, slon, slat, sconj) in rows:
             y += row_h
             out += '<rect x="%s" y="%s" width="640" height="%s" style="%s"/>\n' % (x0 - 25, y - 16, row_h, gridstyle)
-            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_star, y, textstyle, name)
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_star, y, textstyle, label)
             out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_lon, y, textstyle, slon)
             out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_lat, y, textstyle, slat)
             out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_conj, y, textstyle, sconj)
