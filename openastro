@@ -1498,13 +1498,13 @@ class openAstroInstance:
         openAstro.transit=True
         return
 
-    def localToAntiscia(self):
+    def localToAntiscia(self, contra=False):
         #Antiscia (Morinus antiscia.calc) como rueda exterior: el radix se
-        #mantiene en self.* (rueda interior) y los antiscios de cada posicion
-        #natal se copian en self.t_* (rueda exterior), reutilizando el anillo
-        #de transitos. No requiere fecha nueva: deriva integramente del radix
-        #(reflejo sobre el eje Cancer 0 / Capricornio 0). Las lineas de
-        #oposicion a la rueda exterior marcan direcciones contraantiscias.
+        #mantiene en self.* (rueda interior) y los antiscios —o los
+        #contraantiscios si contra=True— de cada posicion natal se copian
+        #en self.t_* (rueda exterior), reutilizando el anillo de transitos.
+        #No requiere fecha nueva: deriva integramente del radix (reflejo
+        #sobre el eje Cancer 0 / Capricornio 0).
         try:
             natal_ut = list(self.planets_degree_ut)
             natal_houses_ut = list(self.houses_degree_ut)
@@ -1521,13 +1521,17 @@ class openAstroInstance:
 
         ant = [ephemeris.calc_antiscion(v, ayan) for v in natal_ut]
         ant_houses = [ephemeris.calc_antiscion(v, ayan) for v in natal_houses_ut]
+        self.antiscia_contra = contra
+        outer_ut = [c for a, c in ant] if contra else [a for a, c in ant]
+        outer_houses_ut = [c for a, c in ant_houses] if contra else [a for a, c in ant_houses]
 
-        #rueda exterior = antiscios (grado_en_signo para las etiquetas)
-        self.t_planets_degree_ut = [a for a, c in ant]
+        #rueda exterior = antiscios o contraantiscios (grado_en_signo
+        #para las etiquetas)
+        self.t_planets_degree_ut = outer_ut
         self.t_planets_sign = [int(v // 30.0) % 12 for v in self.t_planets_degree_ut]
         self.t_planets_degree = [v - s * 30.0 for v, s in zip(self.t_planets_degree_ut, self.t_planets_sign)]
         self.t_planets_retrograde = natal_retro
-        self.t_houses_degree_ut = [a for a, c in ant_houses]
+        self.t_houses_degree_ut = outer_houses_ut
         self.t_houses_sign = [int(v // 30.0) % 12 for v in self.t_houses_degree_ut]
         self.t_houses_degree = [v - s * 30.0 for v, s in zip(self.t_houses_degree_ut, self.t_houses_sign)]
         #referencia temporal/geografica = radix (no es un momento real)
@@ -1541,7 +1545,7 @@ class openAstroInstance:
         self.solar_active = True
         self.biwheel_single = "Antiscia"
         self.type = "Transit"
-        openAstro.charttype="%s (%s)" % (_("Antiscia"), openAstro.name)
+        openAstro.charttype="%s (%s)" % (_("Contraantiscia") if contra else _("Antiscia"), openAstro.name)
         openAstro.transit=True
         return
 
@@ -1877,22 +1881,27 @@ class openAstroInstance:
         self.houses_contra_ut = [c for a, c in anth]
 
         if self.type == "Antiscia":
-            #rueda simple de antiscios: los planetas se dibujan en sus
-            #antiscios sobre el marco de casas natales (los atributos
-            #planets_antiscia_ut ya contienen estos mismos valores)
-            self.planets_degree_ut = list(self.planets_antiscia_ut)
+            #rueda simple de antiscios (o contraantiscios segun lo elegido):
+            #los planetas se dibujan en esas posiciones sobre el marco de
+            #casas natales
+            contra = bool(getattr(self, 'antiscia_contra', False))
+            outer = list(self.planets_contra_ut) if contra else list(self.planets_antiscia_ut)
+            self.planets_degree_ut = outer
             self.planets_sign = [int(v // 30.0) % 12 for v in self.planets_degree_ut]
             self.planets_degree = [v - s * 30.0 for v, s in zip(self.planets_degree_ut, self.planets_sign)]
 
         if self.type == "Transit" and getattr(self, 'solar_active', False) and getattr(self, 'biwheel_single', '') == "Antiscia":
-            #bi-rueda de antiscios: la rama Transit reescribe t_* desde
-            #t_year (= natal), asi que la rueda exterior se re-deriva aqui
-            #como antiscios del radix (interior intacto)
-            self.t_planets_degree_ut = list(self.planets_antiscia_ut)
+            #bi-rueda de antiscios (o contraantiscios): la rama Transit
+            #reescribe t_* desde t_year (= natal), asi que la rueda exterior
+            #se re-deriva aqui (interior intacto)
+            contra = bool(getattr(self, 'antiscia_contra', False))
+            outer = list(self.planets_contra_ut) if contra else list(self.planets_antiscia_ut)
+            outer_houses = list(self.houses_contra_ut) if contra else list(self.houses_antiscia_ut)
+            self.t_planets_degree_ut = outer
             self.t_planets_sign = [int(v // 30.0) % 12 for v in self.t_planets_degree_ut]
             self.t_planets_degree = [v - s * 30.0 for v, s in zip(self.t_planets_degree_ut, self.t_planets_sign)]
             self.t_planets_retrograde = list(self.planets_retrograde)
-            self.t_houses_degree_ut = list(self.houses_antiscia_ut)
+            self.t_houses_degree_ut = outer_houses
             self.t_houses_sign = [int(v // 30.0) % 12 for v in self.t_houses_degree_ut]
             self.t_houses_degree = [v - s * 30.0 for v, s in zip(self.t_houses_degree_ut, self.t_houses_sign)]
             
@@ -4171,10 +4180,52 @@ class mainWindow:
         return
 
     def specialAntiscia(self, widget):
-        #bi-wheel: radix inside, antiscia outside (reuses the transit ring);
-        #"Outer only" in the view selector shows the antiscia alone.
-        #Opposition lines to the outer wheel mark contraantiscion directions.
-        openAstro.localToAntiscia()
+        #dialog: outer wheel shows antiscia or contraantiscia (both derive
+        #from the radix; contraantiscia = antiscion + 180). Last choice is
+        #remembered in astrocfg. Bi-wheel: radix inside, chosen outside.
+        self.win_SA = Gtk.Dialog(parent=self.window)
+        self.win_SA.set_icon_from_file(cfg.iconWindow)
+        self.win_SA.set_title(_("Antiscia Chart"))
+        self.win_SA.connect("delete_event", lambda w,e: self.win_SA.destroy())
+        self.win_SA.move(150,150)
+        self.win_SA.set_border_width(5)
+        self.win_SA.set_size_request(320,120)
+
+        table = Gtk.Table(n_rows=1, n_columns=1, homogeneous=False)
+        table.set_border_width(10)
+
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Show')+": "), False, False, 0)
+        entry = Gtk.ComboBoxText.new()
+        entry.append_text(_("Antiscia"))
+        entry.append_text(_("Contraantiscia"))
+        try:
+            entry.set_active(int(db.getAstrocfg('antiscia_contra') or '0') == 1 and 1 or 0)
+        except (TypeError, ValueError):
+            entry.set_active(0)
+        hbox.pack_start(entry, False, False, 0)
+        table.attach(hbox,0,1,0,1, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        self.win_SA.vbox.pack_start(table, True, True, 0)
+
+        button = Gtk.Button.new_with_mnemonic(_("_OK"))
+        button.connect("clicked", self.specialAntisciaSubmit, entry)
+        button.set_can_default(True)
+        self.win_SA.action_area.pack_start(button, True, True, 0)
+        button.grab_default()
+
+        button = Gtk.Button.new_with_mnemonic(_("_Cancel"))
+        button.connect("clicked", lambda w: self.win_SA.destroy())
+        self.win_SA.action_area.pack_start(button, True, True, 0)
+
+        self.win_SA.show_all()
+        return
+
+    def specialAntisciaSubmit(self, widget, entry):
+        contra = entry.get_active() == 1
+        db.setAstrocfg('antiscia_contra', '1' if contra else '0')
+        openAstro.localToAntiscia(contra)
+        self.win_SA.destroy()
         #a fresh antiscia chart defaults to the bi-wheel view
         self._resetChartViewBoth()
         self.updateChart()
