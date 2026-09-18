@@ -1583,6 +1583,13 @@ class openAstroInstance:
         self.houses_sign = module_data.houses_sign
         self.houses_degree_ut = module_data.houses_degree_ut
         self.lunar_phase = module_data.lunar_phase
+        #fixed stars (Morinus fixstars.py)
+        self.fixed_names = list(getattr(module_data, 'fixed_names', []))
+        self.fixed_short = list(getattr(module_data, 'fixed_short', []))
+        self.fixed_degree_ut = list(getattr(module_data, 'fixed_degree_ut', []))
+        self.fixed_latitude = list(getattr(module_data, 'fixed_latitude', []))
+        self.fixed_sign = list(getattr(module_data, 'fixed_sign', []))
+        self.fixed_degree = list(getattr(module_data, 'fixed_degree', []))
         #extra natal frame for topocentric primary directions
         #(openastromod.primary): ecliptic latitudes, RAMC and birth JD
         self.planets_latitude = list(getattr(module_data, 'planets_latitude', [0.0] * len(self.planets_degree_ut)))
@@ -1798,6 +1805,7 @@ class openAstroInstance:
             td['c3style'] = 'fill: %s; fill-opacity:.8; stroke: %s; stroke-width: 1px'%(self.colors['paper_1'],self.colors['zodiac_transit_ring_0'])
             td['makeAspects'] = self.makeAspectsTransit( r , (r-160))
             td['makeAspectGrid'] = self.makeAspectTransitGrid( r )
+            td['makeFixedStars'] = self.makeFixedStars( r )
             td['makePatterns'] = ''
         else:
             td['transitRing']=""
@@ -1811,6 +1819,7 @@ class openAstroInstance:
             td['c3style'] = 'fill: %s; fill-opacity:.8; stroke: %s; stroke-width: 1px'%(self.colors['paper_1'],self.colors['zodiac_radix_ring_0'])
             td['makeAspects'] = self.makeAspects( r , (r-self.c3))
             td['makeAspectGrid'] = self.makeAspectGrid( r )
+            td['makeFixedStars'] = self.makeFixedStars( r )
             td['makePatterns'] = self.makePatterns()
 
         td['circleX']=str(0)
@@ -1966,7 +1975,31 @@ class openAstroInstance:
     def transitRing( self , r ):
         out = '<circle cx="%s" cy="%s" r="%s" style="fill: none; stroke: %s; stroke-width: 36px; stroke-opacity: .4;"/>' % (r,r,r-18,self.colors['paper_1'])
         out += '<circle cx="%s" cy="%s" r="%s" style="fill: none; stroke: %s; stroke-width: 1px; stroke-opacity: .6;"/>' % (r,r,r,self.colors['zodiac_transit_ring_3'])
-        return out  
+        return out
+
+    #draw fixed stars as small markers with short labels on their own ring
+    def makeFixedStars( self , r ):
+        out = ''
+        names = getattr(self, 'fixed_names', [])
+        lons = getattr(self, 'fixed_degree_ut', [])
+        shorts = getattr(self, 'fixed_short', [])
+        if not names or not lons:
+            return out
+        rstar = 58
+        ink = self.colors['paper_0']
+        for e in range(len(names)):
+            if e >= len(lons) or e >= len(shorts):
+                continue
+            zeropoint = 360 - self.houses_degree_ut[6]
+            t_offset = zeropoint + lons[e]
+            if t_offset > 360:
+                t_offset = t_offset - 360
+            sx = self.sliceToX( 0 , (r-rstar) , t_offset ) + rstar
+            sy = self.sliceToY( 0 , (r-rstar) , t_offset ) + rstar
+            out += '<circle cx="%s" cy="%s" r="3" style="fill: none; stroke: %s; stroke-width: 1.5px;"/>\n' % (sx, sy, ink)
+            out += '<text x="%s" y="%s" style="fill: %s; font-size: 9px;">%s</text>\n' % (sx + 5, sy + 3, ink, shorts[e])
+        return out
+    
     
     #draw degree ring
     def degreeRing( self , r ):
@@ -3319,6 +3352,7 @@ class mainWindow:
         tables_top, tables_menu = submenu(_('Tables'))
         tables_menu.append(mi(_('Monthly Timeline'), self.tableMonthlyTimeline, 'MonthlyTimeline'))
         tables_menu.append(mi(_('Cusp Aspects'), self.tableCuspAspects, 'CuspAspects'))
+        tables_menu.append(mi(_('Fixed Stars'), self.tableFixedStars, 'FixedStars'))
         menubar.append(tables_top)
 
         #Zoom (radio)
@@ -4053,6 +4087,12 @@ class mainWindow:
             #draw svg for printing
             svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
             svg.set_dpi(900)
+            _rsvg_render(svg, cr)
+        elif(self.tabletype == "fixedstars"):
+            self.tableFixedStars(None,printing)
+            #draw svg for printing
+            svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
+            svg.set_dpi(900)
             _rsvg_render(svg, cr)        
 
 
@@ -4447,6 +4487,148 @@ class mainWindow:
             vbox.pack_start(scrolledwindow,True,True,0)
             self.win_TCA.add(vbox)
             self.win_TCA.show_all()     
+        return
+
+    def tableFixedStars(self, widget, printing=None):
+        #Fixed stars (Morinus fixstars.py): star | longitude | latitude |
+        #nearest visible planet in conjunction within 1 degree, if any.
+        self.tabletype="fixedstars"
+
+        def fmt_lon(lon_ut):
+            lon = float(lon_ut) % 360.0
+            sign = int(lon // 30.0) % 12
+            in_sign = lon - int(lon // 30.0) * 30.0
+            d = int(in_sign)
+            m = int((in_sign - d) * 60.0)
+            s = int(round((((in_sign - d) * 60.0) - m) * 60.0))
+            if s == 60:
+                s = 0
+                m += 1
+            if m == 60:
+                m = 0
+                d += 1
+                if d == 30:
+                    d = 0
+                    sign = (sign + 1) % 12
+            return "%02d\xb0%02d'%02d\" %s" % (d, m, s, openAstro.zodiac_short[sign])
+
+        def fmt_lat(lat):
+            sign = '+' if lat >= 0 else '-'
+            a = abs(float(lat))
+            d = int(a)
+            m = int(round((a - d) * 60.0))
+            if m == 60:
+                m = 0
+                d += 1
+            return "%s%02d\xb0%02d'" % (sign, d, m)
+
+        rows = []
+        for e in range(len(getattr(openAstro, 'fixed_names', []))):
+            lon = openAstro.fixed_degree_ut[e]
+            best, bestdiff = None, 1.0
+            for i in range(len(openAstro.planets)):
+                try:
+                    if openAstro.planets[i]['visible'] != 1:
+                        continue
+                except Exception:
+                    pass
+                if i >= len(openAstro.planets_degree_ut):
+                    continue
+                diff = abs((lon - openAstro.planets_degree_ut[i] + 180.0) % 360.0 - 180.0)
+                if diff <= bestdiff:
+                    bestdiff = diff
+                    best = openAstro.planets[i].get('label', openAstro.planets[i].get('name', str(i)))
+            conj = None
+            #conjunction text: planet + orb, or em dash
+            if best:
+                dd = int(bestdiff)
+                mm = int(round((bestdiff - dd) * 60.0))
+                conj = "%s %02d\xb0%02d'" % (best, dd, mm)
+            else:
+                conj = "\u2014"
+            rows.append((openAstro.fixed_names[e], fmt_lon(lon),
+                fmt_lat(openAstro.fixed_latitude[e]), conj))
+
+        out = '<g transform="scale(1.1)">'
+        x0, y0 = 40, 110
+        col_star, col_lon, col_lat, col_conj = x0, x0 + 170, x0 + 340, x0 + 450
+        row_h = 22
+        textstyle = "font-size: 13px; fill: %s" % (openAstro.colors['paper_0'],)
+        headerstyle = "font-size: 14px; font-weight: bold; fill: %s" % (openAstro.colors['paper_0'],)
+        gridstyle = 'stroke:%s; stroke-width: 1px; stroke-opacity:.6; fill:none' % (openAstro.colors['paper_0'],)
+        out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_star, y0, headerstyle, _('Star'))
+        out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_lon, y0, headerstyle, _('Longitude'))
+        out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_lat, y0, headerstyle, _('Latitude'))
+        out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_conj, y0, headerstyle, _('Conjunction'))
+        y = y0 + 10
+        for (name, slon, slat, sconj) in rows:
+            y += row_h
+            out += '<rect x="%s" y="%s" width="640" height="%s" style="%s"/>\n' % (x0 - 25, y - 16, row_h, gridstyle)
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_star, y, textstyle, name)
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_lon, y, textstyle, slon)
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_lat, y, textstyle, slat)
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_conj, y, textstyle, sconj)
+        out += "</g>"
+
+        td = {}
+        td['paper_color_0']=openAstro.colors["paper_0"]
+        td['paper_color_1']=openAstro.colors["paper_1"]
+        for i in range(len(openAstro.planets)):
+            td['planets_color_%s'%(i)]=openAstro.colors["planet_%s"%(i)]
+        for i in range(12):
+            td['zodiac_color_%s'%(i)]=openAstro.colors["zodiac_icon_%s" %(i)]
+        for i in range(len(openAstro.aspects)):
+            td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
+        td['stringTitle'] = "Fixed Stars for %s"%(openAstro.name)
+
+        pages=1
+        pagesY = (1188 * pages)+10
+        if printing:
+            td['svgWidth'] = printing['width']
+            td['svgHeight'] = printing['height']
+            td['viewbox'] = "0 %s 840 1188" %( printing['pagenum']*(1188+10) )
+        else:
+            td['svgWidth'] = 1050
+            td['svgHeight'] = (td['svgWidth']/840.0)* pagesY
+            td['viewbox'] = "0 0 840 %s" %( pagesY )
+
+        td['data'] = out
+        td['pagesRect'] = '<rect x="0" y="0" width="840" height="1188" style="fill: %s;" />' % (openAstro.colors['paper_1'],)
+
+        f=open(cfg.xml_svg_table)
+        template=Template(f.read()).substitute(td)
+        f.close()
+        if printing:
+            f=open(cfg.tempfilenametableprint,"w")
+        else:
+            f=open(cfg.tempfilenametable,"w")
+        f.write(template)
+        f.close()
+
+        if printing == None:
+            self.win_TFS = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+            self.win_TFS.connect("destroy", lambda w: self.win_TFS.destroy())
+            self.win_TFS.set_title("OpenAstro.org Fixed Stars")
+            self.win_TFS.set_icon_from_file(cfg.iconWindow)
+            self.win_TFS.set_size_request(td['svgWidth']+30, 700)
+            self.win_TFS.move(50,50)
+            vbox = Gtk.VBox()
+            hbox = Gtk.HBox()
+            button = Gtk.Button(label=_('Print'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=1,pdf=False,window=self.win_TFS,name="fixed-stars-%s.pdf"%(openAstro.name)))
+            hbox.pack_start(button,False,False,0)
+            button = Gtk.Button(label=_('Save as PDF'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=1,pdf=True,window=self.win_TFS,name="fixed-stars-%s.pdf"%(openAstro.name)))
+            hbox.pack_start(button,False,False,0)
+            vbox.pack_start(hbox,False,False,0)
+            draw = drawSVG()
+            draw.setSVG(cfg.tempfilenametable)
+            scrolledwindow = Gtk.ScrolledWindow()
+            scrolledwindow.add(draw)
+            scrolledwindow.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            vbox.pack_start(scrolledwindow,True,True,0)
+            self.win_TFS.add(vbox)
+            self.win_TFS.show_all()
         return
 
     def aboutInfo(self, widget):
