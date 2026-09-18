@@ -30,8 +30,14 @@ ephe_path=swissDir+':'+swissLocalDir
 import swisseph as swe
 
 # Fixed-star catalog (display name, swe_fixstar_ut name, short label).
-# Every entry resolves in sefstars.txt (verified Sep-2026); Dschubba and
-# Kaus Media do not resolve under those names and are left out.
+# Every entry resolves in sefstars.txt (verified Sep-2026).
+# Excluded: Dschubba is only reachable as 'Isidis (Dschubba)' (included
+# under that swe name); 'Marfik' and 'Han' are mislabeled/ambiguous catalog
+# lines (Marsik and Hanal cover the real stars); 'Coxa' duplicates Chertan.
+# Stars brighter than magnitude 1.0 get a 2-degree orb, the rest 1 degree.
+ORB_2_DEG = {'Sirius', 'Canopus', 'Arcturus', 'Toliman', 'Vega', 'Capella',
+	'Rigel', 'Procyon', 'Achernar', 'Betelgeuse', 'Hadar', 'Altair',
+	'Acrux', 'Aldebaran', 'Antares', 'Spica'}
 FIXED_STARS = [
 	('Aldebaran', 'Aldebaran', 'Ald'),
 	('Algol', 'Algol', 'Alg'),
@@ -125,6 +131,128 @@ FIXED_STARS = [
 	('Merak', 'Merak', 'Mek'),
 	('Suhail al Muhlif', 'Suhail al Muhlif', 'Sam'),
 	('Kaus Media', 'Kaus Meridionalis', 'Kau'),
+	('Mesarthim', 'Mesarthim', 'Mes'),
+	('Botein', 'Botein', 'Bot'),
+	('Ain', 'Ain', 'Ain'),
+	('Prima Hyadum', 'Prima Hyadum', 'PHy'),
+	('Secunda Hyadum', 'Secunda Hyadum', 'SHy'),
+	('Maia', 'Maia', 'Mai'),
+	('Merope', 'Merope', 'Mer'),
+	('Electra', 'Electra', 'Ele'),
+	('Taygeta', 'Taygeta', 'Tyg'),
+	('Atlas', 'Atlas', 'Atl'),
+	('Pleione', 'Pleione', 'Pln'),
+	('Alhena', 'Alhena', 'Alh'),
+	('Wasat', 'Wasat', 'Wst'),
+	('Mebsuta', 'Mebsuta', 'Meb'),
+	('Tejat', 'Tejat', 'Tej'),
+	('Mekbuda', 'Mekbuda', 'Mkd'),
+	('Propus', 'Propus etaGem', 'Prp'),
+	('Acubens', 'Acubens', 'Acb'),
+	('Al Tarf', 'Al Tarf', 'Ata'),
+	('Asellus Australis', 'Asellus Australis', 'AsA'),
+	('Asellus Borealis', 'Asellus Borealis', 'AsB'),
+	('Tegmine', 'Tegmine', 'Teg'),
+	('Algieba', 'Algieba', 'Agb'),
+	('Zosma', 'Zosma', 'Zos'),
+	('Ras Elased Australis', 'Ras Elased Australis', 'REA'),
+	('Ras Elased Borealis', 'Ras Elased Borealis', 'REB'),
+	('Alterf', 'Alterf', 'Atr'),
+	('Subra', 'Subra', 'Sub'),
+	('Chertan', 'Chertan', 'Cht'),
+	('Adhafera', 'Adhafera', 'Adf'),
+	('Porrima', 'Porrima', 'Por'),
+	('Auva', 'Auva', 'Auv'),
+	('Heze', 'Heze', 'Hez'),
+	('Syrma', 'Syrma', 'Syr'),
+	('Khambalia', 'Khambalia', 'Kha'),
+	('Vindemiatrix', 'Vindemiatrix', 'Vin'),
+	('Zaniah', 'Zaniah', 'Zan'),
+	('Zuben Elgenubi', 'Zuben Elgenubi', 'ZEl'),
+	('Zuben Eshamali', 'Zuben Eshamali', 'ZEs'),
+	('Zuben Elakrab', 'Zuben Elakrab', 'ZEA'),
+	('Zuben Hakrabi', 'Zuben Hakrabi', 'ZHk'),
+	('Brachium', 'Brachium', 'Bra'),
+	('Jabbah', 'Jabbah', 'Jab'),
+	('Dschubba', 'Isidis (Dschubba)', 'Dsc'),
+	('Marsik', 'Marsik', 'Msk'),
+	('Yed Prior', 'Yed Prior', 'YPr'),
+	('Yed Posterior', 'Yed Posterior', 'YPo'),
+	('Unukalhai', 'Unukalhai', 'Unu'),
+	('Alya', 'Alya', 'Aly'),
+	('Rasalgethi', 'Rasalgethi', 'Rsg'),
+	('Kornephoros', 'Kornephoros', 'Kor'),
+	('Maasym', 'Maasym', 'Maa'),
+	('Sarin', 'Sarin', 'Srn'),
+	('Sheliak', 'Sheliak', 'Shl'),
+	('Sulafat', 'Sulafat', 'Sul'),
+	('Albireo', 'Albireo', 'Alb'),
+	('Sadr', 'Sadr', 'Sdr'),
+	('Gienah Cygni', 'Gienah Cygni', 'GCy'),
+	('Azelfafage', 'Azelfafage', 'Aze'),
+	('Anser', 'Anser', 'Ans'),
+	('Sham', 'Sham', 'Shm'),
+	('Sualocin', 'Sualocin', 'Sua'),
+	('Rotanev', 'Rotanev', 'Rot'),
+	('Kitalpha', 'Kitalpha', 'Kit'),
+	('Atik', 'Atik', 'Atk'),
+	('Menkib', 'Menkib', 'Mnk'),
+	('Menkalinan', 'Menkalinan', 'Mkn'),
+	('Almach', 'Almach', 'Amc'),
+	('Homam', 'Homam', 'Hom'),
+	('Baham', 'Baham', 'Bah'),
+	('Sadalbari', 'Sadalbari', 'Sbr'),
+	('Deneb Algedi', 'Deneb Algedi', 'DAl'),
+	('Dabih', 'Dabih', 'Dab'),
+	('Algedi', 'Algedi', 'Agi'),
+	('Nashira', 'Nashira', 'Nas'),
+	('Situla', 'Situla', 'Sit'),
+	('Albali', 'Albali', 'Aba'),
+	('Ancha', 'Ancha', 'Anc'),
+	('Alrescha', 'Al Rescha', 'Are'),
+	('Fum Alsamakah', 'Fum Alsamakah', 'Fum'),
+	('Alpherg', 'Al Pherg', 'Apg'),
+	('Revati', 'Revati', 'Rev'),
+	('Acamar', 'Acamar', 'Aca'),
+	('Zaurak', 'Zaurak', 'Zau'),
+	('Rana', 'Rana', 'Ran'),
+	('Cursa', 'Cursa', 'Cur'),
+	('Arneb', 'Arneb', 'Arn'),
+	('Nihal', 'Nihal', 'Nih'),
+	('Phact', 'Phact', 'Pha'),
+	('Wazn', 'Wazn', 'Waz'),
+	('Gomeisa', 'Gomeisa', 'Gom'),
+	('Labrum', 'Labrum', 'Lab'),
+	('Gienah Corvi', 'Gienah Corvi', 'GCo'),
+	('Algorab', 'Algorab', 'Ago'),
+	('Kraz', 'Kraz', 'Kra'),
+	('Minkar', 'Minkar', 'Mkr'),
+	('Diadem', 'Diadem', 'Dia'),
+	('Cor Caroli', 'Cor Caroli', 'CCr'),
+	('Muscida', 'Muscida', 'Mus'),
+	('Talitha Australis', 'Talitha Australis', 'TAA'),
+	('Talitha Borealis', 'Talitha Borealis', 'TAB'),
+	('Alula Australis', 'Alula Australis', 'AlA'),
+	('Alula Borealis', 'Alula Borealis', 'AlB'),
+	('Tania Australis', 'Tania Australis', 'TNA'),
+	('Tania Borealis', 'Tania Borealis', 'TNB'),
+	('Altais', 'Altais', 'Ats'),
+	('Grumium', 'Grumium', 'Gru'),
+	('Alfirk', 'Alfirk', 'Afi'),
+	('Errai', 'Errai', 'Err'),
+	('Kurhah', 'Kurhah', 'Kur'),
+	('Achird', 'Achird', 'Acd'),
+	('Marfak', 'Marfak', 'Mfa'),
+	('Cih', 'Cih', 'Cih'),
+	('Metallah', 'Metallah', 'Met'),
+	('Markeb', 'Markeb', 'Mke'),
+	('Toliman', 'Toliman', 'Tol'),
+	('Menkent', 'Menkent', 'Mkt'),
+	('Suhail Hadar', 'Suhail Hadar', 'SHa'),
+	('Azmidiske', 'Azmidiske', 'Azm'),
+	('Mirzam', 'Mirzam', 'Mrz'),
+	('Sharatan', 'Sharatan', 'Shr'),
+	('Celeano', 'Celeano', 'Cel'),
 ]
 
 def normalize_dodec(lon):
@@ -285,6 +413,7 @@ class ephData:
 		self.fixed_latitude = []
 		self.fixed_sign = []
 		self.fixed_degree = []
+		self.fixed_orb = []
 		for disp, swename, short in FIXED_STARS:
 			try:
 				res = swe.fixstar_ut(swename, self.jul_day_UT, iflag)
@@ -303,6 +432,7 @@ class ephData:
 			self.fixed_latitude.append(lat)
 			self.fixed_sign.append(s)
 			self.fixed_degree.append(lon - int(lon // 30.0) * 30.0)
+			self.fixed_orb.append(2.0 if disp in ORB_2_DEG else 1.0)
 
 							
 		#available house systems:

@@ -1725,6 +1725,7 @@ class openAstroInstance:
         self.fixed_latitude = list(getattr(module_data, 'fixed_latitude', []))
         self.fixed_sign = list(getattr(module_data, 'fixed_sign', []))
         self.fixed_degree = list(getattr(module_data, 'fixed_degree', []))
+        self.fixed_orb = list(getattr(module_data, 'fixed_orb', []))
         #extra natal frame for topocentric primary directions
         #(openastromod.primary): ecliptic latitudes, RAMC and birth JD
         self.planets_latitude = list(getattr(module_data, 'planets_latitude', [0.0] * len(self.planets_degree_ut)))
@@ -2148,10 +2149,16 @@ class openAstroInstance:
         out += '<circle cx="%s" cy="%s" r="%s" style="fill: none; stroke: %s; stroke-width: 1px; stroke-opacity: .6;"/>' % (r,r,r,self.colors['zodiac_transit_ring_3'])
         return out
 
-    #nearest visible planet or cusp in conjunction within orb degrees
-    #(shared by the wheel markers and the Fixed Stars table: only stars
-    #in conjunction are shown)
-    def fixed_star_hit(self, e, orb=1.0):
+    #nearest visible planet or cusp in conjunction within the star's own
+    #orb (2 degrees for magnitude < 1, 1 degree otherwise; shared by the
+    #wheel markers and the Fixed Stars table: only stars in conjunction
+    #are shown). Pass orb explicitly to override.
+    def fixed_star_hit(self, e, orb=None):
+        if orb is None:
+            try:
+                orb = float(self.fixed_orb[e])
+            except Exception:
+                orb = 1.0
         lon = self.fixed_degree_ut[e]
         best, bestdiff = None, orb
         for i in range(len(self.planets)):
