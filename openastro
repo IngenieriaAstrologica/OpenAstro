@@ -3704,7 +3704,19 @@ class mainWindow:
             self.iconn = False
             dprint('iconn: not using geocoding!')
             return
-                        
+
+        #bound the whole check: a blocking connect() without timeout freezes
+        #the entire UI (e.g. the new-chart dialog never appears) for minutes
+        #on networks that drop outbound packets
+        old_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(3.0)
+        try:
+            self._checkInternetConnection()
+        finally:
+            socket.setdefaulttimeout(old_timeout)
+        return
+
+    def _checkInternetConnection(self):
         #from openastromod import timeoutsocket
         #timeoutsocket.setDefaultSocketTimeout(2)
         HOST='api.geonames.org'
