@@ -16,7 +16,7 @@ for a in range(len(f)):
 
 pre_data_files += [
 	('share/applications', ['openastro.desktop']),
-	('share/openastro.org', ['openastro-svg.xml','openastro-svg-table.xml','openastro-ui.xml']),
+	('share/openastro.org', ['openastro-svg.xml','openastro-svg-table.xml','openastro-ui.xml','sefstars.txt']),
 	('share/openastro.org/icons', ['icons/openastro.svg']),
 	('share/openastro.org/icons/aspects', glob.glob('icons/aspects/*.svg'))
 	]

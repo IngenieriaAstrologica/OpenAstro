@@ -156,6 +156,17 @@ class openAstroCfg:
         if os.path.isdir(self.swissLocalDir) == False:
             os.mkdir(self.swissLocalDir)
 
+        #bundled fixed-star catalog (Morinus data, Swiss sefstars.txt
+        #format): install on first run so swe_fixstar_ut always resolves
+        try:
+            bundled = os.path.join(DATADIR, 'sefstars.txt')
+            local = os.path.join(self.swissLocalDir, 'sefstars.txt')
+            if os.path.isfile(bundled) and not os.path.isfile(local):
+                copyfile(bundled, local)
+                dprint('installed bundled sefstars.txt')
+        except Exception as e:
+            dprint('sefstars install skipped: %s' % (e,))
+
         #geonames database
         self.geonamesdb = os.path.join(DATADIR, 'geonames.sql' )
         
