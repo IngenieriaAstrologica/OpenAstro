@@ -2702,10 +2702,10 @@ class openAstroInstance:
                 scale=1
             #output planet          
             output = output + '<g transform="translate(-'+str(12*scale)+',-'+str(12*scale)+')"><g transform="scale('+str(scale)+')"><use x="' + str(planet_x*(1/scale)) + '" y="' + str(planet_y*(1/scale)) + '" xlink:href="#' + self.svgSafeHref(self.planets[i]['name']) + '" /></g></g>\n'
-            #retrograde / stationary letter
+            #retrograde / stationary letter, bold Arial bottom-right
             mark = self.motion_mark(i, self.planets_retrograde, self.planets_stationary)
             if mark:
-                output += '<text x="%s" y="%s" style="fill: %s; font-size: 10px;">%s</text>\n' % (planet_x+10, planet_y-8, self.planets[i]['color'], mark)
+                output += '<text x="%s" y="%s" style="fill: %s; font-family: Arial, sans-serif; font-weight: bold; font-size: 10px;">%s</text>\n' % (planet_x+8, planet_y+12, self.planets[i]['color'], mark)
             
         #make transit degut and display planets
         if self.type == "Transit":
@@ -2779,7 +2779,7 @@ class openAstroInstance:
                 #retrograde / stationary letter on the outer wheel
                 mark = self.motion_mark(i, self.t_planets_retrograde, self.t_planets_stationary)
                 if mark:
-                    output += '<text x="%s" y="%s" style="fill: %s; font-size: 10px;">%s</text>\n' % (planet_x+8, planet_y-6, self.planets[i]['color'], mark)
+                    output += '<text x="%s" y="%s" style="fill: %s; font-family: Arial, sans-serif; font-weight: bold; font-size: 10px;">%s</text>\n' % (planet_x+6, planet_y+10, self.planets[i]['color'], mark)
                 #transit planet line
                 x1 = self.sliceToX( 0 , r+3 , t_offset ) - 3
                 y1 = self.sliceToY( 0 , r+3 , t_offset ) - 3
@@ -3242,7 +3242,7 @@ class openAstroInstance:
                 #planet retrograde / stationary letter
                 mark = self.motion_mark(i, self.planets_retrograde, self.planets_stationary)
                 if mark:
-                    out = out + '<text x="74" y="2" style="fill:%s; font-size: 10px;">%s</text>' % (self.colors['paper_0'], mark)
+                    out = out + '<text x="74" y="2" style="fill:%s; font-family: Arial, sans-serif; font-weight: bold; font-size: 10px;">%s</text>' % (self.colors['paper_0'], mark)
 
                 #end of line
                 out = out + '</g>\n'
