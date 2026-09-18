@@ -29,6 +29,15 @@ ephe_path=swissDir+':'+swissLocalDir
 
 import swisseph as swe
 
+# Mean tropical motions in degrees/day (Sun..Pluto) for stationary
+# detection. A body counts as stationary (S) when |daily motion| is under
+# 3% of its mean motion: the Sun (~1 deg/day) and the Moon (~13 deg/day)
+# can never trigger it, and the nodes/lots are excluded by construction
+# (only indices 0-9 are evaluated).
+MEAN_MOTION = (0.98560736, 13.176396, 4.092317, 1.602136, 0.523917,
+	0.083056, 0.033371, 0.011698, 0.005965, 0.003964)
+STATION_FRACTION = 0.03
+
 # Fixed-star catalog (display name, swe_fixstar_ut name, short label).
 # Every entry resolves in sefstars.txt (verified Sep-2026).
 # Excluded: Dschubba is only reachable as 'Isidis (Dschubba)' (included
@@ -351,6 +360,8 @@ class ephData:
 		self.planets_latitude = [0.0] * len(planets)
 		self.planets_info_string = list(range(len(planets)))
 		self.planets_retrograde = list(range(len(planets)))
+		self.planets_speed = [0.0] * len(planets)
+		self.planets_stationary = [False] * len(planets)
 		#birth moment JD (before any houses_override rewrite below) and RAMC,
 		#needed for topocentric primary directions (openastromod.primary)
 		self.jd_ut = self.jul_day_UT
@@ -413,12 +424,15 @@ class ephData:
 						self.planets_degree[i] = ret_flag[0][0] - deg_low
 						self.planets_degree_ut[i] = ret_flag[0][0]
 						self.planets_latitude[i] = ret_flag[0][1]
+						self.planets_speed[i] = ret_flag[0][3]
 						#if latitude speed is negative, there is retrograde
 						#if ret_flag[3] < 0:						
 						if ret_flag[0][3] < 0:						
 							self.planets_retrograde[i] = True
 						else:
 							self.planets_retrograde[i] = False
+						if i < len(MEAN_MOTION):
+							self.planets_stationary[i] = abs(ret_flag[0][3]) < MEAN_MOTION[i] * STATION_FRACTION
 
 		#fixed stars (Morinus fixstars.py): apparent positions via
 		#swe_fixstar_ut, same flags as the planets (tropical/sidereal
@@ -709,6 +723,8 @@ class ephData:
 						self.planets_sign[i]=x
 						self.planets_degree[i] = self.planets_degree_ut[i] - deg_low
 						self.planets_retrograde[i] = False
+						self.planets_speed[i] = 0.0
+						self.planets_stationary[i] = False
 
 		#lunar phase, anti-clockwise degrees between sun and moon
 		# --- Dodecatemorias (Morinus antiscia.calcDodecatemoria) ---
