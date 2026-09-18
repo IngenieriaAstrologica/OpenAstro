@@ -2,6 +2,14 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Fix: frozen new-chart dialog on slow networks — 2026-09-18
+
+`eventData()` called `checkInternetConnection()` on the GTK thread before
+showing the dialog, and that check did a blocking `connect()` with no
+timeout: on networks that drop packets the whole UI froze for minutes.
+The check is now bounded with a 3 s socket timeout (always restored),
+covering all three call sites at once.
+
 Fork changes by jipejavier@gmail.com — notably the Lots of Fortune, Spirit and
 Infortune (see the "Lot of Infortune" and "Lot of Fortune / Lot of Spirit"
 sections below). The original software is by Pelle van der Scheer (GPL v3).
@@ -846,12 +854,13 @@ of crashing.
   visible planet or a cusp are listed (star | longitude | latitude |
   conjunction), and only those are drawn as markers with short labels on
   the outer ring edge.
-- Catalog of 14 major stars (Aldebaran, Algol, Antares, Regulus, Spica,
-  Fomalhaut, Altair, Vega, Deneb, Betelgeuse, Rigel, Pollux, Arcturus,
-  Sirius) computed with `swe_fixstar_ut` like Morinus (`fixstars.py`).
+- Catalog of 75 major stars (Aldebaran…Matar; see `FIXED_STARS` in
+  `openastromod/swiss.py`, Dschubba and Kaus Media excluded: unresolvable
+  names), computed with `swe_fixstar_ut` like Morinus (`fixstars.py`).
   Needs the star catalog (`sefstars.txt`) in the ephemeris path;
-  missing stars are skipped silently (this swe build also falls back to
-  `fixstars.cat`, and Spica is built in).
+  missing stars are skipped silently, so older catalogs simply show
+  fewer stars (this swe build also falls back to `fixstars.cat`,
+  and Spica is built in).
 
 ### How it works
 - `openastromod/swiss.py` — `FIXED_STARS` catalog, per-star
@@ -859,8 +868,10 @@ of crashing.
   versions differ), `fixed_*` attributes in `ephData`.
 - `openastro.makeFixedStars()` draws markers; `tableFixedStars()`
   renders the SVG table with print/PDF.
-- Verified with real ephemeris: all 14 within 0.005° of reference
-  longitudes; empty catalog degrades to an empty list without errors.
+- Verified with real ephemeris: the catalog resolves fully (73/75 with
+  the older bundled catalog; Facies/Acumen need the newer one) and
+  positions match references to 0.005°; empty catalog degrades to an
+  empty list without errors.
 
 ### Files changed
 - `openastro` — `makeFixedStars`, `tableFixedStars`, Tables menu entry
