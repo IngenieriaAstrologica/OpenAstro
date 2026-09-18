@@ -2,6 +2,39 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Chart style: smaller header, grid and label text — 2026-09-18
+
+Second pass over the canvas text, from screenshots of a rendered chart.
+The wheel was not the only place things collided:
+
+- **Planet grid.** The degree column starts at `x=19` and prints 9
+  characters of DMS (`25&deg;49'02"`), which at 10px monospace is 54px
+  wide and ran to `x=73` — straight through the zodiac glyph at `x=60`
+  and into the R/S mark at `x=74`. The sign glyph was drawn on top of the
+  seconds. Degrees are now 7px (ending at ~57, clear of the glyph),
+  labels 8px, R/S mark 8px.
+- **Houses grid.** Same column layout, same treatment: cusp label 8px,
+  degrees 7px.
+- **Header block.** Title 24px &rarr; 17px, chart name 12px &rarr; 10px and
+  the location/date/lat/lon/position lines 10px &rarr; 8px. The date line
+  is 28 characters and reached `x=188`, overlapping the wheel; it now ends
+  at ~154. Bottom-left lines 10px &rarr; 9px.
+- **Element percentages** 10px &rarr; 8px — "Earth (element) 15%" was
+  running into the wheel.
+- **Fixed-star labels** 7px &rarr; 6px (crowded stars were overprinting
+  each other), **transit/directed list** title 12px &rarr; 10px, rows
+  10px &rarr; 8px, directed orb column 9px &rarr; 7px.
+
+Column clearances were computed from the monospace advance (0.6em), not
+eyeballed, and noted in a comment where the planet-grid degrees are drawn.
+
+### Files changed
+- `openastro` — `makePlanetGrid`, `makeHousesGrid`, `makeElements`,
+  `makeFixedStars`, `makeAspectTransitGrid`
+- `openastro-svg.xml` — header and bottom-left text sizes
+
+---
+
 ## Chart style: smaller canvas text, aspect grid moved right — 2026-09-18
 
 The per-planet texts were colliding with their neighbours. Planets grouped

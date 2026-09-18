@@ -2247,7 +2247,7 @@ class openAstroInstance:
             sx = self.sliceToX( 0 , (r+rstar) , t_offset ) - rstar
             sy = self.sliceToY( 0 , (r+rstar) , t_offset ) - rstar
             out += '<circle cx="%s" cy="%s" r="2.5" style="fill: none; stroke: %s; stroke-width: 1.5px;"/>\n' % (sx, sy, ink)
-            out += '<text x="%s" y="%s" style="fill: %s; font-size: 7px;">%s</text>\n' % (sx + 4, sy + 3, ink, shorts[e])
+            out += '<text x="%s" y="%s" style="fill: %s; font-size: 6px;">%s</text>\n' % (sx + 4, sy + 3, ink, shorts[e])
         return out
     
     
@@ -3127,7 +3127,7 @@ class openAstroInstance:
             grid_title = _("Directed to Natal")
         else:
             grid_title = _("Planets in Transit")
-        out += '<text y="-15" x="0" style="fill:%s; font-size: 12px;">%s</text>\n' % (self.colors['paper_0'],grid_title)
+        out += '<text y="-15" x="0" style="fill:%s; font-size: 10px;">%s</text>\n' % (self.colors['paper_0'],grid_title)
         line = 0
         nl = 0
         #directed rows carry a long orb text: give the second column room.
@@ -3159,7 +3159,7 @@ class openAstroInstance:
                 app = self.atgrid[i]['applicative']
                 color = '#008000' if app else '#c00000'
                 mark = 'A' if app else 'S'
-                out += '<text y="8" x="38" style="fill:%s; font-size: 9px;">%s%s %s</text>' % (
+                out += '<text y="8" x="38" style="fill:%s; font-size: 7px;">%s%s %s</text>' % (
                     color, '+' if app else '-',
                     self.dec2deg(self.atgrid[i]['arc_orb']), mark)
             else:
@@ -3175,7 +3175,7 @@ class openAstroInstance:
                     self.svgSafeHref(self.planets[self.atgrid[i]['p1']]['name']))
                 out += '</g>'
                 #difference in degrees
-                out += '<text y="8" x="45" style="fill:%s; font-size: 10px;">%s</text>' % (
+                out += '<text y="8" x="45" style="fill:%s; font-size: 8px;">%s</text>' % (
                     self.colors['paper_0'],
                     self.dec2deg(self.atgrid[i]['diff']) )
             #line
@@ -3232,10 +3232,10 @@ class openAstroInstance:
         #element colors follow the cardinal signs: Aries, Capricorn, Libra, Cancer
         cfire,cearth,cair,cwater = [self.colors["zodiac_icon_%s"%(i)] for i in (0,9,6,3)]
         out = '<g transform="translate(-30,79)">\n'
-        out = out + '<text y="0" style="fill:%s; font-size: 10px;">'%(cfire)+self.label['fire']+'  '+str(pf)+'%</text>\n'
-        out = out + '<text y="12" style="fill:%s; font-size: 10px;">'%(cearth)+self.label['earth']+' '+str(pe)+'%</text>\n'
-        out = out + '<text y="24" style="fill:%s; font-size: 10px;">'%(cair)+self.label['air']+'   '+str(pa)+'%</text>\n'
-        out = out + '<text y="36" style="fill:%s; font-size: 10px;">'%(cwater)+self.label['water']+' '+str(pw)+'%</text>\n'     
+        out = out + '<text y="0" style="fill:%s; font-size: 8px;">'%(cfire)+self.label['fire']+'  '+str(pf)+'%</text>\n'
+        out = out + '<text y="12" style="fill:%s; font-size: 8px;">'%(cearth)+self.label['earth']+' '+str(pe)+'%</text>\n'
+        out = out + '<text y="24" style="fill:%s; font-size: 8px;">'%(cair)+self.label['air']+'   '+str(pa)+'%</text>\n'
+        out = out + '<text y="36" style="fill:%s; font-size: 8px;">'%(cwater)+self.label['water']+' '+str(pw)+'%</text>\n'     
         out = out + '</g>\n'
         return out
         
@@ -3252,17 +3252,18 @@ class openAstroInstance:
                 #start of line              
                 out = out + '<g transform="translate(%s,%s)">' % (offset,li)
                 #planet text
-                out = out + '<text text-anchor="end" style="fill:%s; font-size: 10px;">%s</text>' % (self.colors['paper_0'],self.planets[i]['label'])
+                out = out + '<text text-anchor="end" style="fill:%s; font-size: 8px;">%s</text>' % (self.colors['paper_0'],self.planets[i]['label'])
                 #planet symbol
-                out = out + '<g transform="translate(5,-8)"><use transform="scale(0.4)" xlink:href="#'+self.svgSafeHref(self.planets[i]['name'])+'" /></g>'                             
-                #planet degree              
-                out = out + '<text text-anchor="start" x="19" style="fill:%s; font-size: 10px;">%s</text>' % (self.colors['paper_0'],self.dec2deg(self.planets_degree[i]))
+                out = out + '<g transform="translate(5,-8)"><use transform="scale(0.4)" xlink:href="#'+self.svgSafeHref(self.planets[i]['name'])+'" /></g>'
+                #planet degree (9 chars of DMS from x=19 must clear the zodiac
+                #glyph at x=60: at 7px monospace they end at ~57)
+                out = out + '<text text-anchor="start" x="19" style="fill:%s; font-size: 7px;">%s</text>' % (self.colors['paper_0'],self.dec2deg(self.planets_degree[i]))
                 #zodiac
                 out = out + '<g transform="translate(60,-8)"><use transform="scale(0.3)" xlink:href="#'+self.zodiac[self.planets_sign[i]]+'" /></g>'                
                 #planet retrograde / stationary letter
                 mark = self.motion_mark(i, self.planets_retrograde, self.planets_stationary)
                 if mark:
-                    out = out + '<text x="74" y="2" style="fill:%s; font-weight: bold; font-size: 10px;">%s</text>' % (self.colors['paper_0'], mark)
+                    out = out + '<text x="74" y="2" style="fill:%s; font-weight: bold; font-size: 8px;">%s</text>' % (self.colors['paper_0'], mark)
 
                 #end of line
                 out = out + '</g>\n'
@@ -3281,9 +3282,9 @@ class openAstroInstance:
             else:
                 cusp = str(i+1)
             out += '<g transform="translate(0,'+str(li)+')">'
-            out += '<text text-anchor="end" x="40" style="fill:%s; font-size: 10px;">%s %s:</text>' % (self.colors['paper_0'],self.label['cusp'],cusp)          
+            out += '<text text-anchor="end" x="40" style="fill:%s; font-size: 8px;">%s %s:</text>' % (self.colors['paper_0'],self.label['cusp'],cusp)
             out += '<g transform="translate(40,-8)"><use transform="scale(0.3)" xlink:href="#'+self.zodiac[self.houses_sign[i]]+'" /></g>'
-            out += '<text x="53" style="fill:%s; font-size: 10px;"> %s</text>' % (self.colors['paper_0'],self.dec2deg(self.houses_degree[i]))
+            out += '<text x="53" style="fill:%s; font-size: 7px;"> %s</text>' % (self.colors['paper_0'],self.dec2deg(self.houses_degree[i]))
             out += '</g>\n'
             li = li + 14
         out += '</g>\n'
