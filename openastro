@@ -2702,6 +2702,13 @@ class openAstroInstance:
                 scale=1
             #output planet          
             output = output + '<g transform="translate(-'+str(12*scale)+',-'+str(12*scale)+')"><g transform="scale('+str(scale)+')"><use x="' + str(planet_x*(1/scale)) + '" y="' + str(planet_y*(1/scale)) + '" xlink:href="#' + self.svgSafeHref(self.planets[i]['name']) + '" /></g></g>\n'
+            #degree and minute below the planet, radially outwards
+            dx = planet_x - r
+            dy = planet_y - r
+            norm = math.sqrt(dx*dx + dy*dy) or 1.0
+            tx = planet_x + dx / norm * 20
+            ty = planet_y + dy / norm * 20
+            output += '<text x="%s" y="%s" text-anchor="middle" style="fill: %s; font-size: 9px;">%s</text>\n' % (tx, ty, self.planets[i]['color'], self.dec2deg(self.planets_degree[i], type="2"))
             #retrograde / stationary letter, bold Arial bottom-right
             mark = self.motion_mark(i, self.planets_retrograde, self.planets_stationary)
             if mark:
