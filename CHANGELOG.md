@@ -2,6 +2,17 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: R/S motion marks — 2026-09-18
+
+Planets show **R** when retrograde and **S** when stationary, on the
+wheel (natal and outer) and in the planet grid (replacing the ℞ glyph).
+Stationary = |daily motion| under 3% of the planet's mean motion
+(`MEAN_MOTION`/`STATION_FRACTION` in `openastromod/swiss.py`, Sun..Pluto
+only — Sun, Moon and nodes can never trigger it); S wins over R at the
+station itself. Verified with real ephemeris: Mercury R Aug 8-9, S Aug
+10-11 (direct station), direct from Aug 12; Sun/Moon never flagged in 12
+monthly samples.
+
 ## Fix: frozen new-chart dialog on slow networks — 2026-09-18
 
 `eventData()` called `checkInternetConnection()` on the GTK thread before
