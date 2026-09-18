@@ -1726,6 +1726,7 @@ class openAstroInstance:
         self.fixed_sign = list(getattr(module_data, 'fixed_sign', []))
         self.fixed_degree = list(getattr(module_data, 'fixed_degree', []))
         self.fixed_orb = list(getattr(module_data, 'fixed_orb', []))
+        self.fixed_color = list(getattr(module_data, 'fixed_color', []))
         #extra natal frame for topocentric primary directions
         #(openastromod.primary): ecliptic latitudes, RAMC and birth JD
         self.planets_latitude = list(getattr(module_data, 'planets_latitude', [0.0] * len(self.planets_degree_ut)))
@@ -2182,29 +2183,65 @@ class openAstroInstance:
             return None, None
         return best, bestdiff
 
-    #draw fixed stars as small markers with short labels on the outer
-    #ring edge (only stars in conjunction, see fixed_star_hit)
+    #outer-ring levels so close markers never overlap: sorted by longitude,
+    #each star takes the first level clear of already placed neighbours
+    #(circular distance, so the 0-degree seam is covered too)
+    def fixed_star_levels(self, lons, min_sep=3.0):
+        levels = (10.0, 22.0, 34.0)
+        order = sorted(range(len(lons)), key=lambda e: lons[e] % 360.0)
+        level_of = [0] * len(lons)
+        placed = []
+        for e in order:
+            lon = lons[e] % 360.0
+            lv = 0
+            while lv < len(levels):
+                ok = True
+                for (plon, plv) in placed:
+                    if plv == lv:
+                        d = abs((lon - plon + 180.0) % 360.0 - 180.0)
+                        if d < min_sep:
+                            ok = False
+                            break
+                if ok:
+                    break
+                lv += 1
+            if lv >= len(levels):
+                lv = len(levels) - 1
+            level_of[e] = lv
+            placed.append((lon, lv))
+        return [levels[lv] for lv in level_of]
+
+    #draw fixed stars OUTSIDE the circle as small markers with short labels
+    #(only stars in conjunction, see fixed_star_hit; black = very malefic,
+    #blue = very benefic, default ink = the rest)
     def makeFixedStars( self , r ):
         out = ''
         names = getattr(self, 'fixed_names', [])
         lons = getattr(self, 'fixed_degree_ut', [])
         shorts = getattr(self, 'fixed_short', [])
+        colors = getattr(self, 'fixed_color', [])
         if not names or not lons:
             return out
-        rstar = 4
-        ink = self.colors['paper_0']
+        hits = []
         for e in range(len(names)):
             if e >= len(lons) or e >= len(shorts):
                 continue
             hit, diff = self.fixed_star_hit(e)
             if hit is None:
                 continue
+            hits.append(e)
+        if not hits:
+            return out
+        rlevels = self.fixed_star_levels([lons[e] for e in hits])
+        ink0 = self.colors['paper_0']
+        for e, rstar in zip(hits, rlevels):
+            ink = colors[e] if e < len(colors) and colors[e] else ink0
             zeropoint = 360 - self.houses_degree_ut[6]
             t_offset = zeropoint + lons[e]
             if t_offset > 360:
                 t_offset = t_offset - 360
-            sx = self.sliceToX( 0 , (r-rstar) , t_offset ) + rstar
-            sy = self.sliceToY( 0 , (r-rstar) , t_offset ) + rstar
+            sx = self.sliceToX( 0 , (r+rstar) , t_offset ) - rstar
+            sy = self.sliceToY( 0 , (r+rstar) , t_offset ) - rstar
             out += '<circle cx="%s" cy="%s" r="2.5" style="fill: none; stroke: %s; stroke-width: 1.5px;"/>\n' % (sx, sy, ink)
             out += '<text x="%s" y="%s" style="fill: %s; font-size: 8px;">%s</text>\n' % (sx + 4, sy + 3, ink, shorts[e])
         return out

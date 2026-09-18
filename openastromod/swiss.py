@@ -38,6 +38,15 @@ import swisseph as swe
 ORB_2_DEG = {'Sirius', 'Canopus', 'Arcturus', 'Toliman', 'Vega', 'Capella',
 	'Rigel', 'Procyon', 'Achernar', 'Betelgeuse', 'Hadar', 'Altair',
 	'Acrux', 'Aldebaran', 'Antares', 'Spica'}
+
+# Extreme natures: black for the very malefic, blue for the very benefic,
+# default ink for the rest.
+MALEFIC_STARS = {'Vertex', 'Algol', 'Alcyone', 'Prisipe', 'Algorab',
+	'Aculeus', 'Acumen', 'Spiculum', 'Facies', 'Scheat'}
+BENEFIC_STARS = {'Regulus', 'Zaniah', 'Spica', 'Arcturus', 'Atria', 'Polis',
+	'Ascella', 'Dheneb', 'Sadalsuud', 'El Nath'}
+MALEFIC_COLOR = '#000000'
+BENEFIC_COLOR = '#0000FF'
 FIXED_STARS = [
 	('Aldebaran', 'Aldebaran', 'Ald'),
 	('Algol', 'Algol', 'Alg'),
@@ -253,6 +262,14 @@ FIXED_STARS = [
 	('Mirzam', 'Mirzam', 'Mrz'),
 	('Sharatan', 'Sharatan', 'Shr'),
 	('Celeano', 'Celeano', 'Cel'),
+	('Vertex', 'Vertex', 'Vtx'),
+	('Prisipe', 'Prisipe', 'Prs'),
+	('Aculeus', 'Aculeus', 'Acl'),
+	('Spiculum', 'Spiculum', 'Spc'),
+	('Atria', 'Atria', 'Ati'),
+	('Polis', 'Polis', 'Poi'),
+	('Dheneb', 'Dheneb', 'Dhe'),
+	('El Nath', 'El Nath', 'ElN'),
 ]
 
 def normalize_dodec(lon):
@@ -414,6 +431,7 @@ class ephData:
 		self.fixed_sign = []
 		self.fixed_degree = []
 		self.fixed_orb = []
+		self.fixed_color = []
 		for disp, swename, short in FIXED_STARS:
 			try:
 				res = swe.fixstar_ut(swename, self.jul_day_UT, iflag)
@@ -433,6 +451,12 @@ class ephData:
 			self.fixed_sign.append(s)
 			self.fixed_degree.append(lon - int(lon // 30.0) * 30.0)
 			self.fixed_orb.append(2.0 if disp in ORB_2_DEG else 1.0)
+			if disp in MALEFIC_STARS:
+				self.fixed_color.append(MALEFIC_COLOR)
+			elif disp in BENEFIC_STARS:
+				self.fixed_color.append(BENEFIC_COLOR)
+			else:
+				self.fixed_color.append(None)
 
 							
 		#available house systems:
