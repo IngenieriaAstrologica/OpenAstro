@@ -776,3 +776,28 @@ of crashing.
 - `openastromod/primary.py` — new engine module
 - `openastromod/swiss.py` — latitudes, RAMC, birth JD
 - `openastro-ui.xml` — reference menu entry (file kept for reference only)
+
+---
+
+## Feature: Lunar Return chart — 2026-09-18
+
+### Change
+- New **Chart Type → Lunar Return**: bi-wheel with the radix inside and the
+  lunar return outside, cloned from the solar-return flow. The dialog asks
+  year and month (last used remembered in `astrocfg`); the return found is
+  the one nearest mid-month. Chart View Both/Inner/Outer applies, with its
+  own `Lunar` single-wheel type.
+- Geocentric Moon always (lunar parallax reaches almost a degree and would
+  eat any tight orb — measured doctrine).
+
+### How it works
+- `openastro.localToLunar()`: coarse step proportional to the tropical
+  month (27.321661 d), then 3 refinement passes with measured two-point
+  lunar speed (seconds precision). Return houses at the natal place.
+- Verified against an independent minute-scan crossing search: agreement
+  0.7 s on a 2026-09 test chart; return residue under 1″.
+
+### Files changed
+- `openastro` — `localToLunar`, `specialLunar`/`specialLunarSubmit`,
+  `Lunar` branch in `makeSVG`, Special menu entry
+- `openastro-ui.xml` — reference menu entry (file kept for reference only)
