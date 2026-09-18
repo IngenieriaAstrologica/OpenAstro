@@ -2492,8 +2492,19 @@ class openAstroInstance:
                 
             xtext = self.sliceToX( 0 , (r-dropin) , text_offset ) + dropin #was 132
             ytext = self.sliceToY( 0 , (r-dropin) , text_offset ) + dropin #was 132
-            path = path + '<line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: '+linecolor+'; stroke-width: 2px; stroke-dasharray:3,2; stroke-opacity:.4;"/>\n'
+            path = path + '<line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: #000000; stroke-width: 1px; stroke-dasharray:3,2; stroke-opacity:.4;"/>\n'
             path = path + '<text style="fill: #f00; fill-opacity: .6; font-size: 14px; font-weight: bold;"><tspan x="'+str(xtext-3)+'" y="'+str(ytext+3)+'">'+str(i+1)+'</tspan></text>\n'
+            #arrowhead at the outer end of Ascendant (cusp 1) and MC (cusp 10)
+            if xr == 12 and (i == 0 or i == 9):
+                dx = x2 - x1
+                dy = y2 - y1
+                norm = math.sqrt(dx*dx + dy*dy) or 1.0
+                ux, uy = dx / norm, dy / norm
+                px, py = -uy, ux
+                L, W = 10.0, 8.0
+                bx, by = x2 - ux * L, y2 - uy * L
+                path = path + '<polygon points="%s,%s %s,%s %s,%s" style="fill: #000000;"/>\n' % (
+                    x2, y2, bx + px * W / 2, by + py * W / 2, bx - px * W / 2, by - py * W / 2)
                         
         return path
     
@@ -2700,8 +2711,10 @@ class openAstroInstance:
                 output += '<line x1="%s" y1="%s" x2="%s" y2="%s" style="stroke-width:1px;stroke:%s;stroke-opacity:.5;"/>\n' % (x1,y1,x2,y2,color)
             else:
                 scale=1
-            #output planet          
-            output = output + '<g transform="translate(-'+str(12*scale)+',-'+str(12*scale)+')"><g transform="scale('+str(scale)+')"><use x="' + str(planet_x*(1/scale)) + '" y="' + str(planet_y*(1/scale)) + '" xlink:href="#' + self.svgSafeHref(self.planets[i]['name']) + '" /></g></g>\n'
+            #output planet (Asc/Mc glyphs are replaced by arrows
+            #at the outer end of their cusp lines)
+            if i not in (23, 24):
+                output = output + '<g transform="translate(-'+str(12*scale)+',-'+str(12*scale)+')"><g transform="scale('+str(scale)+')"><use x="' + str(planet_x*(1/scale)) + '" y="' + str(planet_y*(1/scale)) + '" xlink:href="#' + self.svgSafeHref(self.planets[i]['name']) + '" /></g></g>\n'
             #degree and minute at the bottom-right of the planet (small
             #with halo so aspect lines behind stay readable)
             output += '<text x="%s" y="%s" style="fill: %s; font-size: 8px; stroke: %s; stroke-width: 2px; paint-order: stroke;">%s</text>\n' % (planet_x+7, planet_y+23, self.planets[i]['color'], self.colors['paper_1'], self.dec2deg(self.planets_degree[i], type="2"))

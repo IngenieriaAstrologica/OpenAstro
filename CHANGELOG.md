@@ -2,6 +2,11 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Chart style: thin black cusps with ASC/MC arrows — 2026-09-18
+
+House cusp lines are thin black (1px); the As/Mc wheel glyphs are replaced
+by arrowheads at the outer end of the Ascendant and MC cusp lines.
+
 ## Feature: R/S motion marks — 2026-09-18
 
 Planets show **R** when retrograde and **S** when stationary, on the
