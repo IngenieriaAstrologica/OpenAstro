@@ -1274,6 +1274,10 @@ class openAstroInstance:
         #or "TransitOuter")
         self.solar_active=False
         self.biwheel_single="Solar"
+        #transit measure: ecliptic longitudes (default) or ascensional
+        #(mundo contacts by OA equality under the transit pole); the
+        #dialog remembers the last choice in astrocfg like the directions one
+        self.transit_measure="ecliptic"
         
         #Default dpi for svg is set per-handle when the file is loaded (setSVG)
 
@@ -1628,6 +1632,13 @@ class openAstroInstance:
             self.t_houses_degree = t_module_data.houses_degree
             self.t_houses_sign = t_module_data.houses_sign
             self.t_houses_degree_ut = t_module_data.houses_degree_ut
+            #extra transit frame for ascensional transits
+            #(openastromod.primary.transit_oa_pair): real latitudes,
+            #transit RAMC and transit JD; natal frame (latitudes, RAMC,
+            #birth JD) is grabbed below as for primary directions
+            self.t_planets_latitude = list(getattr(t_module_data, 'planets_latitude', [0.0] * len(self.t_planets_degree_ut)))
+            self.t_ramc = float(getattr(t_module_data, 'ramc', 0.0)) % 360.0
+            self.t_jd = float(getattr(t_module_data, 'jd_ut', 0.0))
 
         #grab normal module data
         self.planets_sign = module_data.planets_sign
@@ -2811,11 +2822,42 @@ class openAstroInstance:
     def makeAspectsTransit( self , r , ar ):
         out = ""
         self.atgrid=[]
+        #ascensional transits (mundo contacts) apply to the transit
+        #bi-wheel only (Transit Chart / Synastry share biwheel_single
+        #"TransitOuter"); solar, progressed, directed and dodecatemoria
+        #bi-wheels keep their own logic. The wheels stay ecliptic: each
+        #contact uses its own transit pole, so no single OA wheel exists.
+        measure = getattr(self, 'transit_measure', 'ecliptic')
+        if measure not in primary_engine.TRANSIT_MEASURE_KEYS:
+            measure = 'ecliptic'
+        asc = (measure == 'ascensional' and getattr(self, 'solar_active', False)
+            and getattr(self, 'biwheel_single', '') == "TransitOuter")
+        if asc:
+            natal_lat = list(getattr(self, 'planets_latitude', []))
+            transit_lat = list(getattr(self, 't_planets_latitude', []))
+            ramc_t = float(getattr(self, 't_ramc', getattr(self, 'ramc', 0.0)))
+            jd_n = float(getattr(self, 'birth_jd', 0.0))
+            jd_t = float(getattr(self, 't_jd', jd_n))
+            geo_lat = float(self.geolat)
         for i in range(len(self.planets)):
             start=self.planets_degree_ut[i]
             for x in range(i+1):
                 end=self.t_planets_degree_ut[x]
-                diff=float(self.degreeDiff(start,end))
+                if asc:
+                    #OA equality under the transiting planet's own
+                    #topocentric pole, both bodies with true latitude
+                    nlat = natal_lat[i] if i < len(natal_lat) else 0.0
+                    tlat = transit_lat[x] if x < len(transit_lat) else 0.0
+                    try:
+                        oa_n, oa_t, _pole = primary_engine.transit_oa_pair(
+                            self.planets_degree_ut[i], nlat,
+                            self.t_planets_degree_ut[x], tlat,
+                            geo_lat, ramc_t, jd_n, jd_t)
+                        diff=float(self.degreeDiff(oa_n,oa_t))
+                    except Exception:
+                        diff=float(self.degreeDiff(start,end))
+                else:
+                    diff=float(self.degreeDiff(start,end))
                 #loop orbs
                 if (self.planets[i]['visible'] == 1) & (self.planets[x]['visible'] == 1):   
                     for z in range(len(self.aspects)):
@@ -3738,6 +3780,56 @@ class mainWindow:
         self.draw.setSVG(self.tempfilename)
             
     def specialTransit(self, widget):
+        #dialog asks the measure (ecliptic longitudes or ascensional mundo
+        #contacts), then draws the now-moment bi-wheel: radix inside,
+        #transit outside. Last used measure is remembered in astrocfg.
+        self.win_ST = Gtk.Dialog(parent=self.window)
+        self.win_ST.set_icon_from_file(cfg.iconWindow)
+        self.win_ST.set_title(_("Transits"))
+        self.win_ST.connect("delete_event", lambda w,e: self.win_ST.destroy())
+        self.win_ST.move(150,150)
+        self.win_ST.set_border_width(5)
+        self.win_ST.set_size_request(320,120)
+
+        table = Gtk.Table(n_rows=1, n_columns=1, homogeneous=False)
+        table.set_border_width(10)
+
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Measure')+": "), False, False, 0)
+        self.transit_measure_list = ["ecliptic", "ascensional"]
+        entry = Gtk.ComboBoxText.new()
+        entry.append_text(_("Ecliptic"))
+        entry.append_text(_("Ascensional (mundo)"))
+        last_measure = db.getAstrocfg('transit_measure')
+        if last_measure not in self.transit_measure_list:
+            last_measure = "ecliptic"
+        entry.set_active(self.transit_measure_list.index(last_measure))
+        hbox.pack_start(entry, False, False, 0)
+        table.attach(hbox,0,1,0,1, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        self.win_ST.vbox.pack_start(table, True, True, 0)
+
+        button = Gtk.Button.new_with_mnemonic(_("_OK"))
+        button.connect("clicked", self.specialTransitSubmit, entry)
+        button.set_can_default(True)
+        self.win_ST.action_area.pack_start(button, True, True, 0)
+        button.grab_default()
+
+        button = Gtk.Button.new_with_mnemonic(_("_Cancel"))
+        button.connect("clicked", lambda w: self.win_ST.destroy())
+        self.win_ST.action_area.pack_start(button, True, True, 0)
+
+        self.win_ST.show_all()
+        return
+
+    def specialTransitSubmit(self, widget, entry):
+        measure = self.transit_measure_list[entry.get_active()]
+        if measure not in primary_engine.TRANSIT_MEASURE_KEYS:
+            measure = "ecliptic"
+        #remember last used measure in astrocfg for the next run
+        db.setAstrocfg('transit_measure', measure)
+        openAstro.transit_measure = measure
+        self.win_ST.destroy()
         openAstro.type="Transit"
         #Transit Chart is a bi-wheel (natal inside, transit outside),
         #so enable Chart View; "Outer only" renders the transit
@@ -3746,14 +3838,14 @@ class mainWindow:
         openAstro.biwheel_single="TransitOuter"
         openAstro.t_geolon=float(openAstro.home_geolon)
         openAstro.t_geolat=float(openAstro.home_geolat)
-        
+
         now = datetime.datetime.now()
         timezone_str = zonetab.nearest_tz(openAstro.t_geolat,openAstro.t_geolon,zonetab.timezones())[2]
         #aware datetime object
         dt_input = datetime.datetime(now.year, now.month, now.day, now.hour, now.minute, now.second)
         dt = dt_input.replace(tzinfo=ZoneInfo(timezone_str), fold=1)
         #naive utc datetime object
-        dt_utc = dt.replace(tzinfo=None) - dt.utcoffset()   
+        dt_utc = dt.replace(tzinfo=None) - dt.utcoffset()
         #transit data
         openAstro.t_year=dt_utc.year
         openAstro.t_month=dt_utc.month
@@ -3763,7 +3855,8 @@ class mainWindow:
         openAstro.t_altitude=25
 
         #make svg with transit
-        openAstro.charttype="%s (%s-%02d-%02d %02d:%02d)" % (openAstro.label["transit"],dt.year,dt.month,dt.day,dt.hour,dt.minute)
+        measure_tag = primary_engine.TRANSIT_MEASURE_TAGS[measure]
+        openAstro.charttype="%s (%s-%02d-%02d %02d:%02d%s)" % (openAstro.label["transit"],dt.year,dt.month,dt.day,dt.hour,dt.minute,measure_tag)
         openAstro.transit=True
         #a fresh transit chart defaults to the bi-wheel view
         self._resetChartViewBoth()
@@ -5133,6 +5226,12 @@ class mainWindow:
             #alone via the TransitOuter type
             openAstro.solar_active=True
             openAstro.biwheel_single="TransitOuter"
+            #synastry reuses the transit aspects: follow the saved transit
+            #measure (ecliptic default) so mundo synastry works the same way
+            saved_measure = db.getAstrocfg('transit_measure')
+            if saved_measure not in primary_engine.TRANSIT_MEASURE_KEYS:
+                saved_measure = "ecliptic"
+            openAstro.transit_measure = saved_measure
             openAstro.t_name=str(list["name"])
             openAstro.t_year=int(list["year"])
             openAstro.t_month=int(list["month"])

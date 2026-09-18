@@ -61,6 +61,16 @@ MEASURE_KEYS = ("ecl_ecl", "asc_asc", "asc_ecl")
 
 MEASURE_TAGS = {"ecl_ecl": ", ecliptic", "asc_asc": ", ascensional", "asc_ecl": ", mixed"}
 
+# Transit measure modes, following the transit chart
+# (carta-natal.es/transitos.php):
+#   ecliptic: zodiacal contacts on ecliptic longitude (the current behaviour).
+#   ascensional: mundo contacts by equality of oblique ascension under the
+#            transiting planet's own topocentric pole, both bodies with
+#            their true ecliptic latitude.
+TRANSIT_MEASURE_KEYS = ("ecliptic", "ascensional")
+
+TRANSIT_MEASURE_TAGS = {"ecliptic": "", "ascensional": ", ascensional"}
+
 
 def norm360(x):
 	"""Any angle to 0..360 degrees."""
@@ -283,3 +293,21 @@ def oa_positions(planets_ut, planets_lat, asc_lon, arc_degrees, geo_lat, ramc, j
 	frame_nat = [norm360(oa_asc + 30.0 * k) for k in range(12)]
 	frame_dir = [norm360(oa_asc + arc_degrees + 30.0 * k) for k in range(12)]
 	return oa_nat, oa_dir, frame_nat, frame_dir
+
+
+def transit_oa_pair(natal_lon, natal_lat, transit_lon, transit_lat,
+			geo_lat, ramc_transit, jd_natal, jd_transit):
+	"""Oblique ascensions of a natal/transit pair under the transit pole.
+
+	The TRANSIT is the moving body and provides the pole, derived from its
+	true position (real ecliptic latitude) exactly as the significator does
+	in `arc_of_direction`. The NATAL keeps its true ecliptic latitude.
+	Returns (oa_natal, oa_transit, pole), all in degrees; a mundo contact
+	holds when oa_transit == oa_natal (+ aspect angle).
+	"""
+	ra_t, dec_t = ecliptic_to_equatorial(transit_lon, transit_lat, jd_transit)
+	pole_t = topocentric_pole(ra_t, dec_t, geo_lat, ramc_transit)
+	oa_t = oblique_ascension(ra_t, dec_t, pole_t)
+	ra_n, dec_n = ecliptic_to_equatorial(natal_lon, natal_lat, jd_natal)
+	oa_n = oblique_ascension(ra_n, dec_n, pole_t)
+	return oa_n, oa_t, pole_t

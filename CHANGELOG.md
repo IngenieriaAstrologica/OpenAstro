@@ -858,3 +858,54 @@ of crashing.
 - `openastromod/swiss.py` — `FIXED_STARS`, fixed-star computation
 - `openastro-svg.xml` — `$makeFixedStars` placeholder
 - `openastro-ui.xml` — reference menu entry (file kept for reference only)
+
+---
+
+## Feature: Ascensional transits (mundo contacts) — 2026-09-18
+
+### Change
+- New **Measure** selector in the **Transit Chart** dialog: **Ecliptic**
+  (default, the current behaviour) or **Ascensional (mundo)**.
+- In ascensional mode the contacts are measured by equality of oblique
+  ascension under the transiting planet's own topocentric pole — the
+  transit analogue of the ascensional measure of primary directions
+  (carta-natal.es/transitos.php context). Both bodies keep their true
+  ecliptic latitude; only visible planets are considered.
+- The wheels stay ecliptic: each contact uses its own transit pole, so no
+  single OA wheel exists (unlike directions, there is no OA rendering).
+- The last used measure is remembered in `astrocfg` (`transit_measure`),
+  like the directions dialog does. Synastry (which reuses the transit
+  bi-wheel) follows the saved measure.
+
+### How it works
+- `openastromod/primary.py` — new `TRANSIT_MEASURE_KEYS`/`TAGS` plus a
+  minimal `transit_oa_pair()` helper built only on the existing
+  primitives (`ecliptic_to_equatorial`, `topocentric_pole`,
+  `oblique_ascension`): transit RA/Dec give the pole, then OA of both
+  bodies under that pole. Natal frame uses the birth JD, transit frame
+  the transit JD, pole and OAs the transit RAMC at the natal latitude.
+- `openastro` — `specialTransit()` is now a measure dialog and
+  `specialTransitSubmit()` draws the now-moment bi-wheel with the chosen
+  measure (chart title gains ", ascensional"); `makeSVG()` also grabs
+  the transit latitudes, RAMC and JD; `makeAspectsTransit()` compares OA
+  differences with the usual orbs when the measure is ascensional on a
+  `TransitOuter` bi-wheel, and the ecliptic longitudes otherwise.
+
+### Verification
+- Hand calculation with the engine primitives (pyswisseph 2.10.03 via wsl
+  python3): natal MC 58.394075 deg (Barcelona 41.38879N 2.15899E,
+  2000-06-15 10:00 UT, JD 2451710.916667) vs transit Moon 62.295142 deg,
+  lat 5.197333 deg (2026-03-23 12:07:20 UT, JD 2461123.005093,
+  RAMC 4.990014): Moon RA 59.077297 / Dec 25.710511, MC RA 56.150883 /
+  Dec 19.801192, pole 22.494157, OA transit 47.576382 vs OA natal
+  47.576528 — mundo orb 0.000146 deg (~0.5") while the ecliptic distance
+  is 3.901067 deg, so the contact exists only in mundo. The helper
+  matches the manual primitives to 1e-9; obliquities 23.437937/23.438356.
+- `py_compile` passes on both touched Python files.
+
+### Files changed
+- `openastro` — `specialTransit`/`specialTransitSubmit`, `transit_measure`
+  default, transit frame grab in `makeSVG`, OA branch in
+  `makeAspectsTransit`, saved measure applied to Synastry
+- `openastromod/primary.py` — `TRANSIT_MEASURE_KEYS`/`TAGS`,
+  `transit_oa_pair()`
