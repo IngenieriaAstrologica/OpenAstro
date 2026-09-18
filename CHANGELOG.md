@@ -852,19 +852,24 @@ of crashing.
 ### Change
 - New **Tables → Fixed Stars**: only stars in conjunction with a visible
   planet or a cusp are listed (star | longitude | latitude | conjunction),
-  and only those are drawn as markers with short labels on the outer ring
-  edge. Per-star orb by brightness: 2° under magnitude 1, 1° otherwise.
-- Catalog of 214 major stars (see `FIXED_STARS` in `openastromod/swiss.py`;
+  and only those are drawn as markers with short labels OUTSIDE the
+  circle, staggered over three outer rings so close markers never overlap.
+  Per-star orb by brightness: 2° under magnitude 1, 1° otherwise.
+- Catalog of 222 major stars (see `FIXED_STARS` in `openastromod/swiss.py`;
   `Han`/`Marfik` excluded as mislabeled catalog lines, `Coxa` as a `Chertan`
   duplicate, `Dschubba` included as `Isidis (Dschubba)`), computed with
   `swe_fixstar_ut` like Morinus (`fixstars.py`).
+- Colors by nature: black for the very malefic (Vertex, Algol, Alcyone,
+  Prisipe, Algorab, Aculeus, Acumen, Spiculum, Facies, Scheat), blue for
+  the very benefic (Regulus, Zaniah, Spica, Arcturus, Atria, Polis,
+  Ascella, Dheneb, Sadalsuud, El Nath), default ink for the rest.
   Needs the star catalog (`sefstars.txt`) in the ephemeris path;
   missing stars are skipped silently, so older catalogs simply show
   fewer stars (this swe build also falls back to `fixstars.cat`,
   and Spica is built in).
 - The catalog ships with the repo as `sefstars.txt` (Morinus data) and
   auto-installs into `~/.openastro.org/swiss_ephemeris` on first run if
-  missing, so all 211 resolve out of the box.
+  missing, so all 222 resolve out of the box.
 
 ### How it works
 - `openastromod/swiss.py` — `FIXED_STARS` catalog, per-star
