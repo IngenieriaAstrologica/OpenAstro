@@ -2,6 +2,82 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: Atacir chart — 2026-09-19
+
+### Change
+New **Chart Type → Atacir Chart**: a bi-wheel with the radix inside and the
+whole chart rotated at **360/N degrees a year** outside, cusps included.
+The dialog asks the target date, the cycle and the direction (direct or
+converse); the last values are remembered in `astrocfg`. Chart View
+Both/Inner/Outer applies, with its own `Atacir` single-wheel type.
+
+The cycle is entered as a free integer in [1, 360] rather than picked from
+a list, because it is a continuous parameter: C-1 turns the chart once a
+year, C-360 advances a single degree a year. The dialog shows the resulting
+rate as you change it. The cycle names the technique, so one engine covers:
+
+| Cycle | Rate | Known as |
+|-------|------|----------|
+| C-12 | 30°/year | annual profections |
+| C-72 | 5°/year | the "5-degree atacir" |
+| C-360 | 1°/year | symbolic directions |
+
+### How it works
+`openastromod/atacir.py`, ~40 lines of pure arithmetic — no ephemerides in
+the loop, so an atacir cannot drift against the Swiss Ephemeris. The
+rotation is rigid: bodies and cusps take the same arc, so the aspects among
+rotated positions stay exactly the natal ones and what the chart shows is
+their new relation to the natal frame.
+
+    arc = days * (360 / N) / 365.2421904
+
+**The roadmap had this formula wrong.** It recorded
+`days * N / 365.2421904`, which for C-12 yields a quarter of the correct
+rotation. The reference is Morinus' `profections.py`, whose
+`K = 12.17473968` is days per degree for C-12; that is exactly
+`365.2421904 / (360/12)`, which is the identity the module generalises. The
+TODO entry has been corrected.
+
+`localToAtacir()` derives the outer wheel into `t_*` and sets
+`type="Transit"`, `solar_active=True`, `biwheel_single="Atacir"`. As with
+primary directions, `makeSVG()` re-derives `t_*` from the stored arc on
+every redraw, because the `Transit` branch rewrites `t_*` from `t_year`.
+
+### Verification
+Engine, 24 checks: `days_per_degree(12)` reproduces Morinus' K to the last
+digit; C-12 matches `days / K` across four spans; the cycles advance
+30/15/10/5/1° a year; a rotation preserves every internal distance; an
+invalid cycle raises.
+
+Cycle input, 10 checks: the bounds hold, out-of-range values clamp instead
+of escaping, and unparseable input falls back to C-12 rather than reaching
+the drawing code as a division by zero. All 360 cycles were then swept:
+every rate is sane, and the worst deviation from closing an exact turn at
+N years is 5.7e-14 degrees.
+
+Against a real chart (1987-04-09, Sant Boi), the two criteria the roadmap
+asked for and the doctrine behind them:
+
+- at the birth instant the arc is 0 and nothing moves;
+- at exactly 12 tropical years the arc is 360.000000° and the chart returns
+  to itself;
+- **at 1 year the Ascendant advances exactly one sign**, at 5 years five,
+  at 30 years six (30 mod 12) — the classic annual profection falls out of
+  the general engine rather than being special-cased;
+- C-360 advances 25° in 25 years; converse three years back gives -90°.
+
+### Not included
+The **placidian** annual profection (Morinus'
+`PlacidianAnnualProfection`). It advances the Ascendant from cusp to cusp
+in discrete jumps rather than rotating continuously, so it is a different
+mapping and does not fall out of this engine. The zodiacal variant — the
+one that unifies symbolic directions and profections — is what ships here.
+
+### Files changed
+- `openastromod/atacir.py` — new engine module
+- `openastro` — `localToAtacir`, `specialAtacir`/`specialAtacirSubmit`, the
+  `Atacir` branches in `makeSVG`, Special menu entry
+
 ## Fix: three drawing bugs found while restyling — 2026-09-19
 
 **Bodies whose name has a space were missing from the aspect lists.** The
