@@ -4711,10 +4711,16 @@ class mainWindow:
         rate = Gtk.Label()
         hbox.pack_start(rate, False, False, 0)
         def show_rate(*_a):
+            #plain text: dec2deg() emits XML entities for the SVG canvas
+            #(&#176; &#39;), which a GTK label would print literally
             n = atacir_engine.valid_cycle(entry['C'].get_value_as_int())
-            rate.set_text("  %s %s  (%s)" % (
-                openAstro.dec2deg(atacir_engine.degrees_per_year(n), type="2"), _("per year"),
-                _("one turn in %d years") % n))
+            deg = atacir_engine.degrees_per_year(n)
+            d = int(deg)
+            m = int(round((deg - d) * 60.0))
+            if m == 60:
+                d, m = d + 1, 0
+            turn = _("one turn a year") if n == 1 else _("one turn in %d years") % n
+            rate.set_text("  %d°%02d' %s  (%s)" % (d, m, _("per year"), turn))
         entry['C'].connect("value-changed", show_rate)
         show_rate()
         table.attach(hbox,0,1,2,3, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
