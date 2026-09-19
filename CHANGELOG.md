@@ -2,6 +2,97 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Fix: three drawing bugs found while restyling — 2026-09-19
+
+**Bodies whose name has a space were missing from the aspect lists.** The
+first glyph of each row was `<use xlink:href="#name">` with the raw name,
+while the second went through `svgSafeHref()`. Symbol ids use underscores,
+so `#day pars` matched nothing and the Lot of Fortune simply did not draw —
+visible as a row starting with its aspect. It affects 12 of the 36 bodies
+(both nodes, both Liliths, the interpolated apogees, the lots with a space,
+black sun). The Lot of Infortune escaped only because its name is already
+`lot_of_infortune`. Fixed at all three unsanitised call sites: the directed
+list, the transit list and the monthly Timeline table. An audit of all 14
+`<use>` references to a planet name now reports zero unsanitised.
+
+**Oppositions showed a nonsense arc orb in primary directions.** The ray
+selection read `rays = (0.0,) if alpha in (0.0, 180.0) else (alpha, -alpha)`.
+Collapsing conjunction and opposition to a single ray is right — the other
+aspects have a dexter and a sinister one — but the ray *is* the aspect
+angle, and passing 0 for an opposition aims `arc_of_direction()` at the
+promisor's body instead of the point opposite it. With a promisor in exact
+opposition and a directed arc of 39.50°, the orb came out 140°22'19"
+instead of 39°30'00", off by the opposition's own 180°. Because the list
+sorts by tightest orb, exact oppositions were being pushed to the bottom.
+Checked across all eleven aspects: only the 180° row changes.
+
+**Planet ink came from a stale table.** Two tables carry a planet colour:
+`color_codes`, which feeds the glyph through the template and is what
+Settings → Colors edits, and `settings_planet.color`, a legacy column that
+nothing updates. They disagree for 13 of the 36 bodies, so a retrograde
+Mercury drew its glyph in `#289900` and its R in `#520800`. All drawing now
+goes through a new `planet_color()` reading `color_codes`. This also
+retires two values SVG cannot parse that were sitting in the old column:
+`orange` and `#33182`.
+
+### Files changed
+- `openastro` — `makeAspectTransitGrid`, Timeline table, `makeAspectsTransit`,
+  new `planet_color()` and its eight call sites
+
+---
+
+## Chart style: retrograde glyph, wheel offset, glyph weight — 2026-09-19
+
+**The ℞ glyph is back**, in the planet's own colour, replacing the letter R
+on both wheels and in the planet grid. The S of a stationary planet stays a
+letter — the symbol can only say "retrograde". The `#retrograde` symbol had
+`fill:$paper_color_0` baked into its path, which overrides anything a caller
+sets, so the fill was removed and each `<use>` now supplies the colour. That
+also repairs the Timeline's retrograde marker, which had been passing a
+colour that was silently ignored.
+
+**Degrees of Asc and Mc read in the cusp colour** (`RADIX_CUSP_COLOR` on the
+radix wheel, `houses_transit_line` on the outer one). Their glyph is an
+arrowhead on the cusp, so the figure belongs to the cusp rather than to a
+body. The literal black of the radix cusps became that constant, shared by
+the cusp lines, their arrowheads and these readings.
+
+**The outer wheel prints degree and minute next to each planet** instead of
+a rotated degrees-only label out on the rim at r+3. The anti-collision
+`group_offset` still applies, so a tight conjunction keeps its two readings
+apart even when the glyphs overlap.
+
+**The wheel sits 16px right** of the left-hand text, and the fixed-star ring
+was pulled in from 10/22/34 to 8/18/26 to pay for it: the ring reaches
+further out than the wheel, and at the old radius the rightmost star label
+would have hit the planet column. `$makeFixedStars` also moved inside the
+template's `$circleX` group — it draws in wheel coordinates, so it would
+otherwise have detached from the wheel.
+
+**The transit/directed list is right-aligned** on a 20px margin instead of a
+fixed x. Its width depends on whether a second column appears past 12 rows,
+so a single-column list can start 107px further right without the two-column
+case overflowing the viewBox.
+
+**Glyphs carry more weight.** Signs, nodes and lots are filled shapes and
+take a `stroke` of their own colour; planets are stroked outlines, so their
+`stroke-width` was raised instead — adding a second stroke would blur them.
+Planet glyphs then went to `PLANET_GLYPH_SCALE = 0.7`, with the widths
+raised by the inverse factor so the on-screen weight stays at 1.664px:
+`stroke-width` lives inside the symbol and scales with it, so changing the
+scale alone silently thins the outline. The four text symbols (As, Mc, Ds,
+Ic) are left alone; stroking letters deforms them.
+
+Fonts were evaluated as a source of glyphs and rejected: the twelve zodiac
+codepoints fall back to emoji on every font installed here, and Leo has no
+glyph at all.
+
+### Files changed
+- `openastro` — `motion_markup()`, `arrowhead()` callers, `zodiacSlice`,
+  `makeHouses`, `makePlanets`, `makeAspectTransitGrid`, the drawing constants
+- `openastro-svg.xml`, `openastro-svg-table.xml` — `#retrograde` fill,
+  `$makeFixedStars` placement, symbol stroke weights
+
 ## Fix: New Chart / Edit Event took seconds to open — 2026-09-19
 
 The dialog did two full scans of the 149,848-row `geonames` table before it

@@ -79,8 +79,33 @@ VERSION='1.1.59'
 #cusps readable through them. Glyph alpha stays high: at ZODIAC_BG_ALPHA the
 #worst glyph-on-sector contrast is 3.85:1 (WCAG AA for large text is 3.0).
 ZODIAC_GLYPH_SCALE = 0.8
+
+#Planet glyphs are drawn smaller than the signs: their symbols are stroked
+#outlines rather than filled shapes, so the same weight reads heavier on
+#them. Multiplies whatever scale the chart view asks for (1 on the radix
+#wheel, 0.5 on the outer one).
+#NOTE: stroke-width lives inside the symbol, so it scales with the glyph.
+#Changing this alone also thins the outline; the widths in the templates
+#were raised by the inverse factor to keep the on-screen weight at 1.664px.
+PLANET_GLYPH_SCALE = 0.7
 ZODIAC_BG_ALPHA = 0.45
 ZODIAC_GLYPH_ALPHA = 0.92
+
+#Radix cusp ink. The outer wheel takes its equivalent from the editable
+#colors['houses_transit_line']; this one is fixed. Shared by the cusp
+#lines, their arrowheads and the Asc/Mc degree readings, which belong to
+#the cusp rather than to a body.
+RADIX_CUSP_COLOR = '#000000'
+
+#Wheel nudged right, away from the left-hand text (header, element legend,
+#lunar-phase lines). How far it can go is set by the fixed-star ring, which
+#reaches further out than the wheel itself: at outer level 26 the rightmost
+#star label lands at x=586.8 and the planet column starts at 588.
+WHEEL_OFFSET_X = 16
+
+#Right margin kept by the transit/directed list, which is right-aligned so
+#it sits in the corner whether it renders one column or two.
+GRID_RIGHT_MARGIN = 20
 
 #Right-hand columns, in the template's translate(50,50) frame (so absolute
 #x = 50 + these). Dropping the row labels freed the space each column used
@@ -2024,7 +2049,7 @@ class openAstroInstance:
             td['makeFixedStars'] = self.makeFixedStars( r )
             td['makePatterns'] = self.makePatterns()
 
-        td['circleX']=str(0)
+        td['circleX']=str(WHEEL_OFFSET_X)
         td['circleY']=str(0)
         td['svgWidth']=str(svgWidth)
         td['svgHeight']=str(svgHeight)
@@ -2216,7 +2241,11 @@ class openAstroInstance:
     #each star takes the first level clear of already placed neighbours
     #(circular distance, so the 0-degree seam is covered too)
     def fixed_star_levels(self, lons, min_sep=3.0):
-        levels = (10.0, 22.0, 34.0)
+        #radial offsets of the three star rings. Pulled in from 10/22/34 so
+        #the outermost labels clear the planet column once the wheel moves
+        #right by WHEEL_OFFSET_X; 10px and 8px apart still separates the
+        #2.5px circles and their 6px labels.
+        levels = (8.0, 18.0, 26.0)
         order = sorted(range(len(lons)), key=lambda e: lons[e] % 360.0)
         level_of = [0] * len(lons)
         placed = []
@@ -2528,14 +2557,40 @@ class openAstroInstance:
                 
             xtext = self.sliceToX( 0 , (r-dropin) , text_offset ) + dropin #was 132
             ytext = self.sliceToY( 0 , (r-dropin) , text_offset ) + dropin #was 132
-            path = path + '<line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: #000000; stroke-width: 1px; stroke-dasharray:3,2; stroke-opacity:.4;"/>\n'
+            path = path + '<line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: '+RADIX_CUSP_COLOR+'; stroke-width: 1px; stroke-dasharray:3,2; stroke-opacity:.4;"/>\n'
             path = path + '<text style="fill: ' + self.colors["zodiac_icon_%s" % self.houses_sign[i]] + '; fill-opacity: .9; font-size: 9px; font-weight: bold;"><tspan x="'+str(xtext-3)+'" y="'+str(ytext+3)+'">'+str(i+1)+'</tspan></text>\n'
             #arrowhead at the outer end of Ascendant (cusp 1) and MC (cusp 10)
             if xr == 12 and (i == 0 or i == 9):
-                path = path + self.arrowhead( x1, y1, x2, y2, '#000000' )
+                path = path + self.arrowhead( x1, y1, x2, y2, RADIX_CUSP_COLOR )
                         
         return path
     
+    #Motion mark markup: the ℞ glyph for retrograde, a bold letter for
+    #stationary (the symbol can only say "retrograde"). Both take the
+    #caller's colour - #retrograde carries no fill of its own, so it
+    #inherits the one set here on the <use>.
+    def motion_markup(self, mark, x, y, color, size):
+        if mark == 'R':
+            #symbol is 12x12 and anchored top-left; the letter it replaces
+            #sat on its baseline, hence the y-size shift
+            return '<g transform="translate(%s,%s)"><g transform="scale(%s)"><use x="0" y="0" xlink:href="#retrograde" style="fill: %s;" /></g></g>\n' % (
+                x, y - size, size / 12.0, color)
+        return '<text x="%s" y="%s" style="fill: %s; font-weight: bold; font-size: %spx;">%s</text>\n' % (
+            x, y, color, size, mark)
+
+    def planet_color(self, i):
+        """Ink for body `i`, from the same source as its glyph.
+
+        Two tables carry a planet colour. `color_codes` feeds the glyph
+        through the template ($planets_color_N) and is the one Settings ->
+        Colors edits. `settings_planet.color` is a stale legacy column: it
+        disagrees for 13 of the 36 bodies and even holds values SVG cannot
+        parse ("orange", "#33182"). Drawing must follow the glyph, or the
+        degree text and the R/S mark come out a different colour from the
+        planet they belong to.
+        """
+        return self.colors["planet_%s" % (i,)]
+
     #motion mark for wheel and grid: S when stationary, R when retrograde
     #(stationary wins at the station), else no mark
     def motion_mark(self, i, retrograde, stationary):
@@ -2729,7 +2784,7 @@ class openAstroInstance:
                 y1=self.sliceToY( 0 , (r-self.c3) , trueoffset ) + self.c3
                 x2=self.sliceToX( 0 , (r-rplanet-30) , trueoffset ) + rplanet + 30
                 y2=self.sliceToY( 0 , (r-rplanet-30) , trueoffset ) + rplanet + 30
-                color=self.planets[i]["color"]
+                color=self.planet_color(i)
                 output += '<line x1="%s" y1="%s" x2="%s" y2="%s" style="stroke-width:1px;stroke:%s;stroke-opacity:.3;"/>\n' % (x1,y1,x2,y2,color)
                 #line2
                 x1=self.sliceToX( 0 , (r-rplanet-30) , trueoffset ) + rplanet + 30
@@ -2742,15 +2797,19 @@ class openAstroInstance:
             #output planet (Asc/Mc glyphs are replaced by arrows
             #at the outer end of their cusp lines)
             if i not in (23, 24):
-                output = output + '<g transform="translate(-'+str(12*scale)+',-'+str(12*scale)+')"><g transform="scale('+str(scale)+')"><use x="' + str(planet_x*(1/scale)) + '" y="' + str(planet_y*(1/scale)) + '" xlink:href="#' + self.svgSafeHref(self.planets[i]['name']) + '" /></g></g>\n'
+                gs = scale * PLANET_GLYPH_SCALE
+                output = output + '<g transform="translate(-'+str(12*gs)+',-'+str(12*gs)+')"><g transform="scale('+str(gs)+')"><use x="' + str(planet_x*(1/gs)) + '" y="' + str(planet_y*(1/gs)) + '" xlink:href="#' + self.svgSafeHref(self.planets[i]['name']) + '" /></g></g>\n'
             #degree and minute at the bottom-right of the planet (small
-            #with halo so aspect lines behind stay readable)
-            output += '<text x="%s" y="%s" style="fill: %s; font-size: 5px; stroke: %s; stroke-width: 1.5px; paint-order: stroke;">%s</text>\n' % (planet_x+3, planet_y+17, self.planets[i]['color'], self.colors['paper_1'], self.dec2deg(self.planets_degree[i], type="2"))
+            #with halo so aspect lines behind stay readable). Asc and Mc
+            #read in the cusp colour: their glyph is an arrowhead on the
+            #cusp, so the figure belongs to the cusp, not to a body.
+            deg_color = RADIX_CUSP_COLOR if i in (23, 24) else self.planet_color(i)
+            output += '<text x="%s" y="%s" style="fill: %s; font-size: 5px; stroke: %s; stroke-width: 1.5px; paint-order: stroke;">%s</text>\n' % (planet_x+3, planet_y+17, deg_color, self.colors['paper_1'], self.dec2deg(self.planets_degree[i], type="2"))
             #retrograde / stationary letter, bold bottom-right (Fira Code
             #Nerd Font via the canvas stylesheet)
             mark = self.motion_mark(i, self.planets_retrograde, self.planets_stationary)
             if mark:
-                output += '<text x="%s" y="%s" style="fill: %s; font-weight: bold; font-size: 7px;">%s</text>\n' % (planet_x+8, planet_y+4, self.planets[i]['color'], mark)
+                output += self.motion_markup(mark, planet_x+8, planet_y+4, self.planet_color(i), 7)
             
         #make transit degut and display planets
         if self.type == "Transit":
@@ -2822,43 +2881,32 @@ class openAstroInstance:
                 planet_y = self.sliceToY( 0 , (r-rplanet) , t_offset ) + rplanet
                 #As/Mc glyphs are replaced by the arrowheads on their cusps
                 if i not in (23, 24):
-                    output = output + '<g transform="translate(-6,-6)"><g transform="scale(0.5)"><use x="' + str(planet_x*2) + '" y="' + str(planet_y*2) + '" xlink:href="#' + self.svgSafeHref(self.planets[i]['name']) + '" /></g></g>\n'
+                    ts = 0.5 * PLANET_GLYPH_SCALE
+                    output = output + '<g transform="translate(-'+str(12*ts)+',-'+str(12*ts)+')"><g transform="scale('+str(ts)+')"><use x="' + str(planet_x*(1/ts)) + '" y="' + str(planet_y*(1/ts)) + '" xlink:href="#' + self.svgSafeHref(self.planets[i]['name']) + '" /></g></g>\n'
                 #retrograde / stationary letter on the outer wheel
                 mark = self.motion_mark(i, self.t_planets_retrograde, self.t_planets_stationary)
                 if mark:
-                    output += '<text x="%s" y="%s" style="fill: %s; font-weight: bold; font-size: 6px;">%s</text>\n' % (planet_x+5, planet_y+2, self.planets[i]['color'], mark)
+                    output += self.motion_markup(mark, planet_x+5, planet_y+2, self.planet_color(i), 6)
                 #transit planet line
                 x1 = self.sliceToX( 0 , r+3 , t_offset ) - 3
                 y1 = self.sliceToY( 0 , r+3 , t_offset ) - 3
                 x2 = self.sliceToX( 0 , r-3 , t_offset ) + 3
                 y2 = self.sliceToY( 0 , r-3 , t_offset ) + 3
-                output = output + '<line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: '+self.planets[i]['color']+'; stroke-width: 1px; stroke-opacity:.8;"/>\n'
+                output = output + '<line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: '+self.planet_color(i)+'; stroke-width: 1px; stroke-opacity:.8;"/>\n'
                 
-                #transit planet degree text
-                rotate = self.houses_degree_ut[0] - self.t_planets_degree_ut[i]
-                textanchor="end"
-                t_offset += group_offset[i]
-                rtext=-3.0
-    
-                if -90 > rotate > -270:
-                    rotate = rotate + 180.0
-                    textanchor="start"
-                if 270 > rotate > 90:
-                    rotate = rotate - 180.0
-                    textanchor="start"
-    
-                    
-                if textanchor == "end":
-                    xo=1
-                else:
-                    xo=-1               
-                deg_x = self.sliceToX( 0 , (r-rtext) , t_offset + xo ) + rtext
-                deg_y = self.sliceToY( 0 , (r-rtext) , t_offset + xo ) + rtext
-                degree=int(t_offset)
-                output += '<g transform="translate(%s,%s)">' % (deg_x,deg_y)
-                output += '<text transform="rotate(%s)" text-anchor="%s' % (rotate,textanchor)
-                output += '" style="fill: '+self.planets[i]['color']+'; font-size: 6px;">'+self.dec2deg(self.t_planets_degree[i],type="1")
-                output += '</text></g>\n'
+                #Degree and minute next to the planet, as on the radix wheel,
+                #instead of the old rotated degrees-only label out on the rim
+                #(which sat at r+3, outside the zodiac ring). group_offset
+                #still applies: it spreads the readings of planets grouped
+                #within 2.5 degrees, whose glyphs sit on top of each other.
+                t_text_offset = t_offset + group_offset[i]
+                deg_x = self.sliceToX( 0 , (r-rplanet) , t_text_offset ) + rplanet
+                deg_y = self.sliceToY( 0 , (r-rplanet) , t_text_offset ) + rplanet
+                #Asc and Mc read in the outer wheel's own cusp colour
+                t_deg_color = self.colors['houses_transit_line'] if i in (23, 24) else self.planet_color(i)
+                output += '<text x="%s" y="%s" style="fill: %s; font-size: 5px; stroke: %s; stroke-width: 1.5px; paint-order: stroke;">%s</text>\n' % (
+                    deg_x+2, deg_y+12, t_deg_color, self.colors['paper_1'],
+                    self.dec2deg(self.t_planets_degree[i], type="2"))
             
             #check transit
             if self.type == "Transit":
@@ -2871,7 +2919,7 @@ class openAstroInstance:
             y1 = self.sliceToY( 0 , r-(dropin+3) , offset ) + (dropin+3)
             x2 = self.sliceToX( 0 , (r-(dropin-3)) , offset ) + (dropin-3)
             y2 = self.sliceToY( 0 , (r-(dropin-3)) , offset ) + (dropin-3)
-            output = output + '<line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: '+self.planets[i]['color']+'; stroke-width: 2px; stroke-opacity:.6;"/>\n'
+            output = output + '<line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: '+self.planet_color(i)+'; stroke-width: 2px; stroke-opacity:.6;"/>\n'
             
             #check transit
             if self.type == "Transit":
@@ -2883,7 +2931,7 @@ class openAstroInstance:
             y1 = self.sliceToY( 0 , r-dropin , offset ) + dropin
             x2 = self.sliceToX( 0 , (r-(dropin-3)) , offset ) + (dropin-3)
             y2 = self.sliceToY( 0 , (r-(dropin-3)) , offset ) + (dropin-3)
-            output = output + '<line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: '+self.planets[i]['color']+'; stroke-width: 2px; stroke-opacity:.6;"/>\n'
+            output = output + '<line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: '+self.planet_color(i)+'; stroke-width: 2px; stroke-opacity:.6;"/>\n'
 
         return output
 
@@ -3139,7 +3187,14 @@ class openAstroInstance:
                                         sig_lon = self.planets_degree_ut[x]
                                         sig_lat = self.planets_latitude[x] if x < len(self.planets_latitude) else 0.0
                                         pro_lon = self.planets_degree_ut[i]
-                                        rays = (0.0,) if alpha in (0.0, 180.0) else (alpha, -alpha)
+                                        #conjunction and opposition have a
+                                        #single ray, the rest are dexter and
+                                        #sinister. The ray is the aspect angle
+                                        #itself: passing 0 for an opposition
+                                        #aims at the promisor's body instead of
+                                        #the point opposite it, and the arc
+                                        #comes out 180 degrees wrong.
+                                        rays = (alpha,) if alpha in (0.0, 180.0) else (alpha, -alpha)
                                         best = None
                                         for ray in rays:
                                             exact = primary_engine.arc_of_direction(sig_lon, sig_lat, pro_lon, 0.0, ray, self.geolat, self.ramc, self.birth_jd)
@@ -3152,21 +3207,28 @@ class openAstroInstance:
         return out
 
     def makeAspectTransitGrid( self , r ):
-        out = '<g transform="translate(500,310)">'
-        if getattr(self, 'biwheel_single', '') == "Directed":
-            grid_title = _("Directed to Natal")
-        else:
-            grid_title = _("Planets in Transit")
-        out += '<text y="-15" x="0" style="fill:%s; font-size: 10px;">%s</text>\n' % (self.colors['paper_0'],grid_title)
-        line = 0
-        nl = 0
+        directed = getattr(self, 'biwheel_single', '') == "Directed"
         #directed rows carry a long orb text: give the second column room.
         #tightest orb first, widest last.
-        if getattr(self, 'biwheel_single', '') == "Directed":
+        if directed:
             nl_step = 110
+            grid_title = _("Directed to Natal")
             self.atgrid.sort(key=lambda e: e.get('arc_orb', 999.0))
         else:
             nl_step = 100
+            grid_title = _("Planets in Transit")
+        #Right-align the block on the margin so it sits in the corner. A
+        #second column only appears past 12 rows, and it is what decides the
+        #width, so a single-column list can start much further right.
+        row_w = 95
+        cols = 2 if len(self.atgrid) > 12 else 1
+        block_w = nl_step * (cols - 1) + row_w
+        #772.2 viewBox less the template's translate(50,50) and the margin
+        x = 772.2 - 50 - GRID_RIGHT_MARGIN - block_w
+        out = '<g transform="translate(%s,310)">' % (round(x, 1),)
+        out += '<text y="-15" x="0" style="fill:%s; font-size: 10px;">%s</text>\n' % (self.colors['paper_0'],grid_title)
+        line = 0
+        nl = 0
         for i in range(len(self.atgrid)):
             if i == 12:
                 nl = nl_step
@@ -3179,7 +3241,7 @@ class openAstroInstance:
                 #directed list: outer glyph, aspect glyph, inner glyph,
                 #signed arc-orb in DMS plus applicative/separative mark
                 out += '<use transform="scale(0.4)" x="0" y="3" xlink:href="#%s" />\n' % (
-                    self.planets[self.atgrid[i]['p2']]['name'])
+                    self.svgSafeHref(self.planets[self.atgrid[i]['p2']]['name']))
                 out += '<use  x="12" y="0" xlink:href="#orb%s" />\n' % (
                     self.aspects[self.atgrid[i]['aid']]['degree'])
                 out += '<g transform="translate(24,0)">'
@@ -3195,7 +3257,7 @@ class openAstroInstance:
             else:
                 #first planet symbol
                 out += '<use transform="scale(0.4)" x="0" y="3" xlink:href="#%s" />\n' % (
-                    self.planets[self.atgrid[i]['p2']]['name'])
+                    self.svgSafeHref(self.planets[self.atgrid[i]['p2']]['name']))
                 #aspect symbol
                 out += '<use  x="15" y="0" xlink:href="#orb%s" />\n' % (
                     self.aspects[self.atgrid[i]['aid']]['degree'])
@@ -3292,7 +3354,7 @@ class openAstroInstance:
                 #planet retrograde / stationary letter
                 mark = self.motion_mark(i, self.planets_retrograde, self.planets_stationary)
                 if mark:
-                    out = out + '<text x="74" y="2" style="fill:%s; font-weight: bold; font-size: 8px;">%s</text>' % (self.colors['paper_0'], mark)
+                    out = out + self.motion_markup(mark, 74, 2, self.colors['paper_0'], 8)
 
                 #end of line
                 out = out + '</g>\n'
@@ -4878,7 +4940,7 @@ class mainWindow:
                     x="%s" \
                     y="%s" \
                     xlink:href="#%s" />\n\
-                    '%((xindent+2)*2.5, (yindent+1)*2.5, openAstro.planets[a]['name'])
+                    '%((xindent+2)*2.5, (yindent+1)*2.5, openAstro.svgSafeHref(openAstro.planets[a]['name']))
         
             yorb=yindent - box
             for b in range(12):
