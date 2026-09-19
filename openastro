@@ -4713,7 +4713,7 @@ class mainWindow:
         def show_rate(*_a):
             n = atacir_engine.valid_cycle(entry['C'].get_value_as_int())
             rate.set_text("  %s %s  (%s)" % (
-                self.dec2deg(atacir_engine.degrees_per_year(n), type="2"), _("per year"),
+                openAstro.dec2deg(atacir_engine.degrees_per_year(n), type="2"), _("per year"),
                 _("one turn in %d years") % n))
         entry['C'].connect("value-changed", show_rate)
         show_rate()
