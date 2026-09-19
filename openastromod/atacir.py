@@ -32,9 +32,14 @@ import math
 #Mean tropical year in days, matching Morinus' constant.
 TROPICAL_YEAR = 365.2421904
 
-#Cycles offered in the UI. Any positive N works; these are the traditional
-#ones. C-12 is the reference cycle and the default.
-CYCLES = (12, 24, 36, 72, 360)
+#The cycle is a free parameter: any positive N describes a valid atacir.
+#The UI takes an integer in [MIN_CYCLE, MAX_CYCLE], a range that spans the
+#whole useful family -- C-1 turns the chart once a year, C-360 advances a
+#single degree a year -- and contains the traditional cycles (12, 24, 36,
+#72, 360) without pinning the user to a list. C-12 is the reference cycle
+#and the default.
+MIN_CYCLE = 1
+MAX_CYCLE = 360
 DEFAULT_CYCLE = 12
 
 #Monthly subdivision of a C-12 year (Morinus profectionsmonthly.py): twelve
@@ -42,6 +47,20 @@ DEFAULT_CYCLE = 12
 #monthly table belongs to this family; not used by the wheel itself.
 MONTH_STEP_12 = 30.4368492
 MONTH_STEP_13 = 28.0955531
+
+
+def valid_cycle(cycle, default=DEFAULT_CYCLE):
+    """Coerce user input into a usable cycle.
+
+    Anything unparseable falls back to the default, and out-of-range values
+    are clamped, so a stray entry can never reach the drawing code as a
+    division by zero or an absurd rate.
+    """
+    try:
+        n = int(cycle)
+    except (TypeError, ValueError):
+        return default
+    return max(MIN_CYCLE, min(MAX_CYCLE, n))
 
 
 def degrees_per_year(cycle=DEFAULT_CYCLE):

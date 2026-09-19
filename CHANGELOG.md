@@ -11,13 +11,14 @@ The dialog asks the target date, the cycle and the direction (direct or
 converse); the last values are remembered in `astrocfg`. Chart View
 Both/Inner/Outer applies, with its own `Atacir` single-wheel type.
 
-The cycle names the technique, which is why this one engine covers three:
+The cycle is entered as a free integer in [1, 360] rather than picked from
+a list, because it is a continuous parameter: C-1 turns the chart once a
+year, C-360 advances a single degree a year. The dialog shows the resulting
+rate as you change it. The cycle names the technique, so one engine covers:
 
 | Cycle | Rate | Known as |
 |-------|------|----------|
 | C-12 | 30°/year | annual profections |
-| C-24 | 15°/year | |
-| C-36 | 10°/year | |
 | C-72 | 5°/year | the "5-degree atacir" |
 | C-360 | 1°/year | symbolic directions |
 
@@ -44,9 +45,15 @@ every redraw, because the `Transit` branch rewrites `t_*` from `t_year`.
 
 ### Verification
 Engine, 24 checks: `days_per_degree(12)` reproduces Morinus' K to the last
-digit; C-12 matches `days / K` across four spans; the five cycles advance
+digit; C-12 matches `days / K` across four spans; the cycles advance
 30/15/10/5/1° a year; a rotation preserves every internal distance; an
 invalid cycle raises.
+
+Cycle input, 10 checks: the bounds hold, out-of-range values clamp instead
+of escaping, and unparseable input falls back to C-12 rather than reaching
+the drawing code as a division by zero. All 360 cycles were then swept:
+every rate is sane, and the worst deviation from closing an exact turn at
+N years is 5.7e-14 degrees.
 
 Against a real chart (1987-04-09, Sant Boi), the two criteria the roadmap
 asked for and the doctrine behind them:

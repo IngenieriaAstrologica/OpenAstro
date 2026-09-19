@@ -1569,11 +1569,7 @@ class openAstroInstance:
         #cycle N names the technique: C-12 is annual profections (30 deg a
         #year), C-360 the 1 deg/year symbolic directions.
         #converse=True runs it backwards, towards the past.
-        try:
-            cycle = int(cycle)
-            atacir_engine.degrees_per_year(cycle)
-        except (TypeError, ValueError):
-            cycle = atacir_engine.DEFAULT_CYCLE
+        cycle = atacir_engine.valid_cycle(cycle)
 
         #remove timezone (dt comes in local time, as in primary directions)
         dt_utc = dt - datetime.timedelta(seconds=float(self.timezone)*float(3600))
@@ -4699,20 +4695,28 @@ class mainWindow:
             hbox.pack_start(entry[k], False, False, 0)
         table.attach(hbox,0,1,1,2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
-        #cycle selector: C-12 is the reference cycle (annual profections),
-        #C-360 the 1 deg/year symbolic directions
+        #cycle: any integer in [1, 360]. C-12 is the reference cycle (annual
+        #profections), C-360 the 1 deg/year symbolic directions. A rate
+        #label next to the field says what the chosen cycle means.
         hbox = Gtk.HBox(spacing=4)
-        hbox.pack_start(Gtk.Label(label=_('Cycle')+": "), False, False, 0)
-        self.atacir_cycle_list = list(atacir_engine.CYCLES)
-        entry['C']=Gtk.ComboBoxText()
-        for n in self.atacir_cycle_list:
-            entry['C'].append_text("C-%d  (%g%s)" % (n, atacir_engine.degrees_per_year(n), _("°/year")))
-        try:
-            active = self.atacir_cycle_list.index(int(last('atacir_cycle', str(atacir_engine.DEFAULT_CYCLE))))
-        except ValueError:
-            active = self.atacir_cycle_list.index(atacir_engine.DEFAULT_CYCLE)
-        entry['C'].set_active(active)
+        hbox.pack_start(Gtk.Label(label=_('Cycle')+": C-", ), False, False, 0)
+        entry['C']=Gtk.SpinButton()
+        entry['C'].set_adjustment(Gtk.Adjustment(
+            value=atacir_engine.valid_cycle(last('atacir_cycle', atacir_engine.DEFAULT_CYCLE)),
+            lower=atacir_engine.MIN_CYCLE, upper=atacir_engine.MAX_CYCLE,
+            step_increment=1, page_increment=10))
+        entry['C'].set_numeric(True)
+        entry['C'].set_width_chars(4)
         hbox.pack_start(entry['C'], False, False, 0)
+        rate = Gtk.Label()
+        hbox.pack_start(rate, False, False, 0)
+        def show_rate(*_a):
+            n = atacir_engine.valid_cycle(entry['C'].get_value_as_int())
+            rate.set_text("  %s %s  (%s)" % (
+                self.dec2deg(atacir_engine.degrees_per_year(n), type="2"), _("per year"),
+                _("one turn in %d years") % n))
+        entry['C'].connect("value-changed", show_rate)
+        show_rate()
         table.attach(hbox,0,1,2,3, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
         #direct or converse
@@ -4735,7 +4739,7 @@ class mainWindow:
 
     def specialAtacirSubmit(self, widget, entry):
         dt = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()))
-        cycle = self.atacir_cycle_list[entry['C'].get_active()]
+        cycle = atacir_engine.valid_cycle(entry['C'].get_value_as_int())
         converse = entry['R'].get_active() == 1
         #remember last used parameters in astrocfg for the next run
         db.setAstrocfg('atacir_Y', entry['Y'].get_text())
