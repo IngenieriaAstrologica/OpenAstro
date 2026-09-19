@@ -59,7 +59,36 @@ Con **Ubuntu + WSLg** instalado, haz doble clic en **`OpenAstro.bat`** (que ejec
 - **Ficheros de Swiss Ephemeris** (p. ej. `seas_18.se1`) → colócalos en `~/.openastro.org/swiss_ephemeris`. El catálogo de estrellas fijas (`sefstars.txt`, datos de Morinus) **sí** viene incluido y se instala solo al arrancar si falta.
 
 ## 🔧 Cambios de este fork
-Los cambios respecto a OpenAstro.org 1.1.57 están detallados en **[CHANGELOG.md](CHANGELOG.md)**: corrección del dibujado de planetas, nodos y Lilith; coordenadas editables; colores de signos por elemento; la incorporación de los **Lotes de Fortuna, Espíritu e Infortunio** (por jipejavier@gmail.com); y las nuevas cartas en doble rueda de **dodecatemorias**, **direcciones primarias topocéntricas** (claves Naibod/Ptolomeo/arco solar, directas/conversas, medidas eclíptica/ascensional/mixta, rejilla con orbe de arco y aplicativa/separativa), **revolución lunar** y **antiscios/contraantiscios**, además de las **estrellas fijas** (222, con orbe por brillo), los **tránsitos en medida ascensional** y las **marcas R/S** de retrogradación y estación.
+Respecto a OpenAstro.org 1.1.57, todo detallado en **[CHANGELOG.md](CHANGELOG.md)**.
+
+### Técnicas nuevas
+- **Direcciones primarias topocéntricas** (Polich-Page) en doble rueda: claves Naibod/Ptolomeo/arco solar, directas o conversas, cartas eclíptica/ascensional/mixta y rejilla con orbe de arco y marca de aplicativa/separativa.
+- **Revolución lunar**, **dodecatemorias** y **antiscios/contraantiscios**, cada una como carta derivada en doble rueda.
+- **Tránsitos en medida ascensional** (contactos en el mundo por ascensión oblicua), además de la eclíptica.
+- **Estrellas fijas**: catálogo de 222 con color por naturaleza y orbe propio según el brillo.
+- **Lotes de Fortuna, Espíritu e Infortunio** (por jipejavier@gmail.com).
+
+### Correcciones
+- Los planetas no se dibujaban (todos caían en 18° de Sagitario), y nodos y Lilith tampoco.
+- Los números de casa lanzaban `TypeError` y no llegaban a pintarse.
+- El nodo sur nunca mostraba su ℞ pese a ser siempre retrógrado.
+- Los cuerpos cuyo nombre lleva un espacio —12 de 36, entre ellos el Lote de Fortuna— faltaban en las listas de aspectos.
+- Las oposiciones daban un orbe de arco 180° desviado en direcciones primarias.
+- El color de cada planeta se leía de una tabla obsoleta que discrepa en 13 de 36 cuerpos.
+- Los lotes ignoraban la secta en cartas nocturnas; el diálogo de carta nueva se congelaba en redes lentas.
+
+### Rendimiento
+- El atlas de ciudades va indexado: abrir **New Chart** o **Edit Event** pasa de **5,6 s a 0,1 s**.
+
+### Presentación
+- Paleta de signos generada en **CIELAB LCh** (elemento = tono, modalidad = luminosidad), con croma ajustado al gamut sRGB y transparencia por capa.
+- Cúspides finas discontinuas, con punta de flecha en Ascendente y Medio Cielo en lugar de glifo, y color único en la rueda exterior.
+- Glifo **℞** en el color del planeta y marcas **R/S** de retrogradación y estación.
+- Rejillas sin nombres redundantes, columnas ajustadas al margen y grados junto a cada planeta en ambas ruedas.
+- Coordenadas editables y atlas de ciudades offline incluido.
+
+### Compatibilidad
+- Puesta al día para **Python 3** y **GTK 3**, con zonas horarias por `zoneinfo` (sin `pytz`) y lanzador para Windows vía WSL.
 
 ## 🙏 Créditos
 - Software original **OpenAstro.org** por **Pelle van der Scheer** — <http://www.openastro.org>
