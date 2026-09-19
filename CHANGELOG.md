@@ -2,6 +2,91 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Fix: Monthly Timeline gains Save as CSV — 2026-09-19
+
+The Timeline window had Print and Save as PDF only. A **Save as CSV**
+button now exports the same table: `Transit, Aspect, Natal` plus one
+column per day (`01`…), cells holding the orb to two decimals with an `R`
+suffix when the transiting planet is retrograde that day. Rows keep the
+Chaldean display order; the default filename is
+`timeline-YYYY-MM-<name>.csv`.
+
+Transit/Natal use UTF-8 glyphs (☉ ☽ ☿ ♀ ♂ ♃ ♄ ♅ ♆ ♇ ☊ ☋ ⚸ ⊕ ⚷ ⚳ ⚴ ⚵
+⚶), angles/lots/minor points their short label; aspects use ☌ ⚺ ∠ ⚹ Q □
+△ ⚼ bQ ⚻ ☍. The file is written with BOM (`utf-8-sig`) so Excel detects
+the encoding directly.
+
+**Node glyphs are real node symbols.** The first build mapped `mean node`
+/ `true node` to U+264A and `south node` to U+264B, which are the zodiac
+signs Gemini and Cancer (♊ ♋), so those rows showed the wrong symbol.
+They now use ☊ (U+260A) and ☋ (U+260B) like the rest of the column.
+
+### Files changed
+- `openastro` — `tableMonthlyTimelineCSV`, stored table in `tableMonthlyTimelineShow`
+
+## Fix: quincunx yellow unreadable, Asc/Mc not black — 2026-09-19
+
+**Quincunx (150°) is no longer yellow.** `#fff600` on white measures
+1.14:1 contrast, so its line, glyph and Timeline cells were invisible. It
+is now a dark teal `#00796b` (5.32:1, WCAG AA), distinct from quintile
+blue, trine green and the browns. **Asc and Mc draw in black**: Asc was
+orange (`orange` / `#ff7e00`, 2.55:1) and Mc red (`#FF0000`).
+
+Changed in the three places that carry these inks — `color_codes`
+defaults (what drawing and Settings → Colors use), `settings_aspect` /
+`settings_planet` defaults — plus a conditional migration at startup that
+updates only rows still holding the old defaults, so user customizations
+survive. Dsc stays blue, Ic was already black.
+
+### Files changed
+- `openastro` — `defaultColors`, `value_settings_planet`, `settings_aspect` defaults, startup migration
+
+## Fix: Monthly Timeline ignored Settings -> Aspects — 2026-09-19
+
+**Monthly Timeline only showed major aspects with a fixed ±4° orb.**
+`tableMonthlyTimelineShow` filtered on `is_major == 1` (conjunction,
+sextile, square, trine, opposition) and hardcoded `orb_before = orb_after
+= 4`, so anything ticked in Settings -> Aspects outside those five —
+quintile, biquintile, quincunx, etc. — never appeared, and the per-aspect
+orb column was ignored. The opacity shading also divided by the same
+hardcoded 4.
+
+Now the loop skips an aspect only when both `visible` (in Circle) and
+`visible_grid` are 0, and the detection window plus the shading use
+`float(aspects[z]['orb'])` with a 4° fallback and a guard for orb <= 0.
+Deselected aspects stay hidden; selected minors appear with their
+configured orb (e.g. trine at 126.5° now shows with orb 8, quincunx at
+153.5° stays hidden with orb 3).
+
+**Rows are now sorted in Chaldean order, slowest first.** The old key
+sorted by natal index, so the Moon opened the table. The sort key is now
+`(rank(transit), rank(natal), aspect)`, with Pluto, Neptune, Uranus,
+Saturn, Jupiter, Mars, Sun, Venus, Mercury, Moon first and any remaining
+points (nodes, asteroids, angles, lots) keeping their relative order
+afterwards.
+
+**The month came out short with western timezones.** The day count was
+`(enddate - startdate).days` computed from datetimes already shifted to
+UTC, so the truncation dropped a day (September showed 29, February 27,
+December 30) and past +12 the start fell in the previous month and the
+table broke entirely. The title even used the shifted date and could name
+the wrong month. Days now come from `calendar.monthrange(y, m)`, each
+column samples its own day at local noon, and the title uses the plain
+`datetime(y, m, 1)`.
+
+**Invalid month/year in the dialog now show an error instead of crashing.**
+The entry fields are validated on OK: month must be 1–12, year 1000–9999;
+otherwise a message dialog appears and the table is not generated.
+
+**Removed the PyGTK `buttons=` deprecation warning.** All seven
+`Gtk.FileChooserDialog` calls (PDF/SQL export, DB import, XML import,
+chart export/import, PDF print, Timeline PDF and CSV) passed their buttons
+as the deprecated `buttons=` constructor argument. They now use
+`add_buttons()`.
+
+### Files changed
+- `openastro` — `tableMonthlyTimelineShow`, aspect filter + orb + shading + Chaldean sort
+
 ## Feature: Firdaria table — 2026-09-19
 
 ### Change
