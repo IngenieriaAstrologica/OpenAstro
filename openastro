@@ -53,7 +53,7 @@ from gi.repository import Gtk, Gdk, GLib, GObject, Rsvg, cairo
 #internal openastro modules
 sys.path.append("/usr/lib/python3.5/dist-packages") #trying to 'fix' some problems importing openastromod on some distros
 sys.path.append("/usr/lib/python3.5/site-packages") #trying to 'fix' some problems importing openastromod on some distros
-from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine
+from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine
 
 def _rsvg_render(handle, cr):
     """Render a whole SVG handle at its natural size onto a Cairo context,
@@ -3853,6 +3853,7 @@ class mainWindow:
         tables_menu.append(mi(_('Monthly Timeline'), self.tableMonthlyTimeline, 'MonthlyTimeline'))
         tables_menu.append(mi(_('Cusp Aspects'), self.tableCuspAspects, 'CuspAspects'))
         tables_menu.append(mi(_('Fixed Stars'), self.tableFixedStars, 'FixedStars'))
+        tables_menu.append(mi(_('Firdaria'), self.tableFirdaria, 'Firdaria'))
         menubar.append(tables_top)
 
         #Zoom (radio)
@@ -4861,6 +4862,12 @@ class mainWindow:
             svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
             svg.set_dpi(900)
             _rsvg_render(svg, cr)
+        elif(self.tabletype == "firdaria"):
+            self.tableFirdaria(None,printing)
+            #draw svg for printing
+            svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
+            svg.set_dpi(900)
+            _rsvg_render(svg, cr)
         elif(self.tabletype == "cuspaspects"):
             self.tableCuspAspects(None,printing)
             #draw svg for printing
@@ -5268,6 +5275,141 @@ class mainWindow:
             self.win_TCA.show_all()     
         return
         
+    def tableFirdaria(self, widget, printing=None):
+        #Firdaria (Morinus firdaria.py): the 75-year chain of time lords,
+        #each period split into seven sub-periods except the nodes'.
+        #The sect decides the order; nocturnal charts follow Al-Biruni
+        #(Bonatti's variant moves the nodes mid-chain).
+        self.tabletype="firdaria"
+
+        #sect, as swiss.py computes it for the lots: diurnal when the Sun
+        #is above the horizon
+        sun = openAstro.planets_degree_ut[0]
+        asc = openAstro.houses_degree_ut[0]
+        day_chart = (sun - asc) % 360.0 >= 180.0
+        bonatti = db.getAstrocfg('firdaria_bonatti') == '1'
+
+        #period lord -> index in openAstro.planets, for label and colour
+        RULER_TO_PLANET = {firdaria_engine.SATURN: 6, firdaria_engine.JUPITER: 5,
+                           firdaria_engine.MARS: 4, firdaria_engine.SUN: 0,
+                           firdaria_engine.VENUS: 3, firdaria_engine.MERCURY: 2,
+                           firdaria_engine.MOON: 1, firdaria_engine.NORTH_NODE: 10,
+                           firdaria_engine.SOUTH_NODE: 29}
+
+        def ruler_label(r):
+            i = RULER_TO_PLANET[r]
+            try:
+                return openAstro.planets[i]['label']
+            except (IndexError, KeyError):
+                return str(r)
+
+        def ruler_color(r):
+            return openAstro.planet_color(RULER_TO_PLANET[r])
+
+        rows = firdaria_engine.periods(
+            datetime.datetime(openAstro.year, openAstro.month, openAstro.day),
+            day_chart, bonatti)
+
+        textstyle = "font-size: 11px; fill: %s" % (openAstro.colors['paper_0'],)
+        substyle = "font-size: 9px; fill: %s" % (openAstro.colors['paper_0'],)
+        headerstyle = "font-size: 12px; font-weight: bold; fill: %s" % (openAstro.colors['paper_0'],)
+        gridstyle = 'stroke:%s; stroke-width: 1px; stroke-opacity:.6; fill:none' % (openAstro.colors['paper_0'],)
+
+        out = '<g transform="translate(40,60)">'
+        sect_name = _("diurnal") if day_chart else (
+            _("nocturnal (Bonatti)") if bonatti else _("nocturnal (Al-Biruni)"))
+        out += '<text x="0" y="0" style="%s">%s: %s</text>\n' % (
+            headerstyle, _("Sect"), sect_name)
+        out += '<text x="0" y="24" style="%s">%s</text>\n' % (headerstyle, _("Ruler"))
+        out += '<text x="150" y="24" style="%s">%s</text>\n' % (headerstyle, _("From"))
+        out += '<text x="260" y="24" style="%s">%s</text>\n' % (headerstyle, _("To"))
+        out += '<text x="370" y="24" style="%s">%s</text>\n' % (headerstyle, _("Years"))
+        out += '<text x="440" y="24" style="%s">%s</text>\n' % (headerstyle, _("Sub-periods"))
+
+        y = 30
+        for p in rows:
+            y += 20
+            out += '<rect x="-15" y="%s" width="740" height="18" style="%s"/>\n' % (y - 13, gridstyle)
+            out += '<text x="0" y="%s" style="font-size: 11px; font-weight: bold; fill: %s">%s</text>\n' % (
+                y, ruler_color(p['ruler']), ruler_label(p['ruler']))
+            out += '<text x="150" y="%s" style="%s">%s</text>\n' % (y, textstyle, p['start'].strftime('%Y-%m-%d'))
+            #the period runs up to, but not including, the next boundary
+            out += '<text x="260" y="%s" style="%s">%s</text>\n' % (
+                y, textstyle, (p['end'] - datetime.timedelta(days=1)).strftime('%Y-%m-%d'))
+            out += '<text x="370" y="%s" style="%s">%s</text>\n' % (y, textstyle, p['years'])
+            if p['is_node']:
+                out += '<text x="440" y="%s" style="%s">%s</text>\n' % (
+                    y, substyle, _("(the nodes take no sub-periods)"))
+                continue
+            x = 440
+            for (r, s_start, _s_end) in p['sub']:
+                out += '<text x="%s" y="%s" style="font-size: 9px; fill: %s">%s</text>\n' % (
+                    x, y, ruler_color(r), ruler_label(r)[:3])
+                out += '<text x="%s" y="%s" style="font-size: 7px; fill: %s">%s</text>\n' % (
+                    x, y + 8, openAstro.colors['paper_0'], s_start.strftime('%y-%m-%d'))
+                x += 40
+        out += "</g>"
+
+        td = {}
+        td['paper_color_0']=openAstro.colors["paper_0"]
+        td['paper_color_1']=openAstro.colors["paper_1"]
+        for i in range(len(openAstro.planets)):
+            td['planets_color_%s'%(i)]=openAstro.colors["planet_%s"%(i)]
+        for i in range(12):
+            td['zodiac_color_%s'%(i)]=openAstro.colors["zodiac_icon_%s" %(i)]
+        for i in range(len(openAstro.aspects)):
+            td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
+        td['stringTitle'] = "Firdaria for %s"%(openAstro.name)
+
+        pages=1
+        pagesY = (1188 * pages)+10
+        if printing:
+            td['svgWidth'] = printing['width']
+            td['svgHeight'] = printing['height']
+            td['viewbox'] = "0 %s 840 1188" %( printing['pagenum']*(1188+10) )
+        else:
+            td['svgWidth'] = 1050
+            td['svgHeight'] = (td['svgWidth']/840.0)* pagesY
+            td['viewbox'] = "0 0 840 %s" %( pagesY )
+
+        td['data'] = out
+        td['pagesRect'] = '<rect x="0" y="0" width="840" height="1188" style="fill: %s;" />' % (openAstro.colors['paper_1'],)
+
+        f=open(cfg.xml_svg_table)
+        template=Template(f.read()).substitute(td)
+        f.close()
+        if printing:
+            f=open(cfg.tempfilenametableprint,"w")
+        else:
+            f=open(cfg.tempfilenametable,"w")
+        f.write(template)
+        f.close()
+
+        if printing == None:
+            self.win_TFD = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+            self.win_TFD.connect("destroy", lambda w: self.win_TFD.destroy())
+            self.win_TFD.set_title("OpenAstro.org Firdaria")
+            self.win_TFD.set_icon_from_file(cfg.iconWindow)
+            self.win_TFD.set_size_request(td['svgWidth']+30, 700)
+            self.win_TFD.move(50,50)
+            vbox = Gtk.VBox()
+            hbox = Gtk.HBox()
+            button = Gtk.Button(label=_('Print'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=1,pdf=False,window=self.win_TFD,name="firdaria-%s.pdf"%(openAstro.name)))
+            hbox.pack_start(button,False,False,0)
+            button = Gtk.Button(label=_('Save as PDF'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=1,pdf=True,window=self.win_TFD,name="firdaria-%s.pdf"%(openAstro.name)))
+            hbox.pack_start(button,False,False,0)
+            vbox.pack_start(hbox,False,False,0)
+            draw = drawSVG()
+            draw.setSVG(cfg.tempfilenametable)
+            scrolledwindow = Gtk.ScrolledWindow()
+            scrolledwindow.add(draw)
+            vbox.pack_start(scrolledwindow,True,True,0)
+            self.win_TFD.add(vbox)
+            self.win_TFD.show_all()
+        return
+
     def tableFixedStars(self, widget, printing=None):
         #Fixed stars (Morinus fixstars.py): only stars in conjunction
         #(orb 1 degree) with a visible planet or a cusp are listed:

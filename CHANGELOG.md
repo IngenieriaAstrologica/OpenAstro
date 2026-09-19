@@ -2,6 +2,45 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: Firdaria table — 2026-09-19
+
+### Change
+New **Tables → Firdaria**: the 75-year Persian chain of time lords, one row
+per period with its ruler, span, length and its seven sub-periods. The sect
+picks the order without asking — diurnal charts open with the Sun,
+nocturnal ones with the Moon — using the same test `swiss.py` already
+applies to the lots (`(sun - asc) % 360 >= 180`). The table prints and
+saves to PDF like the other tables.
+
+All three traditional orders are implemented. Nocturnal charts follow
+Al-Biruni by default; `firdaria_bonatti` in `astrocfg` switches to
+Bonatti's, which moves the nodes mid-chain, before the Sun, instead of
+closing it.
+
+### How it works
+`openastromod/firdaria.py`, pure calendar arithmetic with no ephemerides,
+so nothing here can drift. Each non-node period divides into seven equal
+sub-periods whose rulers walk the same chain from the period's own lord,
+skipping the nodes — and Bonatti's order resumes at the Sun rather than
+wrapping to the start, which is why the node positions are read from the
+chain itself instead of being hardcoded.
+
+### Verification
+Morinus' algorithm was transcribed literally and run alongside this one
+over four birth dates × the three orders, compared period by period *and*
+sub-period by sub-period: **zero discrepancies**. All three chains sum to
+75 years, the nodes never receive sub-periods, and the ruler-to-planet
+mapping was checked against the real name list for all nine rulers.
+
+One deliberate departure: a **29 February** birth. Morinus computes each
+boundary as `datetime(year + years, month, day)`, which raises for a leap
+day whenever the target year is common. Boundaries are kept at the 28th
+rather than spilling into March.
+
+### Files changed
+- `openastromod/firdaria.py` — new engine module
+- `openastro` — `tableFirdaria`, Tables menu entry, print dispatch
+
 ## Feature: Atacir chart — 2026-09-19
 
 ### Change
