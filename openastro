@@ -53,7 +53,7 @@ from gi.repository import Gtk, Gdk, GLib, GObject, Rsvg, cairo
 #internal openastro modules
 sys.path.append("/usr/lib/python3.5/dist-packages") #trying to 'fix' some problems importing openastromod on some distros
 sys.path.append("/usr/lib/python3.5/site-packages") #trying to 'fix' some problems importing openastromod on some distros
-from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine
+from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine
 
 def _rsvg_render(handle, cr):
     """Render a whole SVG handle at its natural size onto a Cairo context,
@@ -1559,6 +1559,66 @@ class openAstroInstance:
         openAstro.transit=True
         return
 
+    def localToAtacir(self, dt, cycle=atacir_engine.DEFAULT_CYCLE, converse=False):
+        #Atacir (Demetrio Santos; "profection" in Morinus) as the outer
+        #wheel: the radix stays in self.* and the whole chart rotated by
+        #360/N degrees a year goes to self.t_*, reusing the transit ring.
+        #The rotation is rigid -- bodies and cusps take the same arc -- so
+        #the aspects among rotated positions are the natal ones; what the
+        #chart shows is their new relation to the natal frame.
+        #cycle N names the technique: C-12 is annual profections (30 deg a
+        #year), C-360 the 1 deg/year symbolic directions.
+        #converse=True runs it backwards, towards the past.
+        try:
+            cycle = int(cycle)
+            atacir_engine.degrees_per_year(cycle)
+        except (TypeError, ValueError):
+            cycle = atacir_engine.DEFAULT_CYCLE
+
+        #remove timezone (dt comes in local time, as in primary directions)
+        dt_utc = dt - datetime.timedelta(seconds=float(self.timezone)*float(3600))
+
+        if getattr(self, 'planets', None) is None:
+            self.planets = db.getSettingsPlanet()
+        natal = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+
+        target_jd = primary_engine.julday(dt_utc.year,dt_utc.month,dt_utc.day,self.decHourJoin(dt_utc.hour,dt_utc.minute,dt_utc.second))
+        arc = atacir_engine.arc_for_jds(natal.jd_ut, target_jd, cycle)
+        if converse:
+            arc = -arc
+        self.atacir_arc = arc
+        self.atacir_cycle = cycle
+        self.atacir_converse = converse
+
+        ap = atacir_engine.rotate(natal.planets_degree_ut, arc)
+        ah = atacir_engine.rotate(natal.houses_degree_ut, arc)
+        self.t_planets_degree_ut = ap
+        self.t_planets_sign = [int(v // 30.0) % 12 for v in ap]
+        self.t_planets_degree = [v - s * 30.0 for v, s in zip(ap, self.t_planets_sign)]
+        #rigid rotation carries the natal motion unchanged: a body that was
+        #retrograde at birth is still the same body, just relocated
+        self.t_planets_retrograde = list(natal.planets_retrograde)
+        self.t_houses_degree_ut = ah
+        self.t_houses_sign = [int(v // 30.0) % 12 for v in ah]
+        self.t_houses_degree = [v - s * 30.0 for v, s in zip(ah, self.t_houses_sign)]
+        #reference date = requested date at the natal place (derived chart)
+        self.t_year = dt_utc.year
+        self.t_month = dt_utc.month
+        self.t_day = dt_utc.day
+        self.t_hour = self.decHourJoin(dt_utc.hour,dt_utc.minute,dt_utc.second)
+        self.t_geolon = self.geolon
+        self.t_geolat = self.geolat
+        self.t_altitude = self.altitude
+        self.solar_active = True
+        self.biwheel_single = "Atacir"
+        self.type = "Transit"
+        direction = _(", converse") if converse else ""
+        openAstro.charttype="%s C-%d (%s-%02d-%02d, %s%s)" % (
+            _("Atacir"), cycle, dt.year, dt.month, dt.day,
+            self.dec2deg(atacir_engine.normalize(arc)), direction)
+        openAstro.transit=True
+        return
+
     def localToAntiscia(self, contra=False):
         #Antiscia (Morinus antiscia.calc) como rueda exterior: el radix se
         #mantiene en self.* (rueda interior) y los antiscios —o los
@@ -1733,6 +1793,12 @@ class openAstroInstance:
             #planets at their directed longitudes (see override below)
             module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
 
+        elif self.type == "Atacir":
+            #single-wheel view of the atacir ("Outer only" for the Atacir
+            #chart): the whole radix rotated rigidly, cusps included
+            #(see override below)
+            module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+
         elif self.type == "Transit" or self.type == "Composite":
             module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
             t_module_data = ephemeris.ephData(self.t_year,self.t_month,self.t_day,self.t_hour,self.t_geolon,self.t_geolat,self.t_altitude,self.planets,self.zodiac,db.astrocfg)
@@ -1815,6 +1881,31 @@ class openAstroInstance:
             self.t_houses_degree_ut = list(self.houses_dodecatemoria_ut)
             self.t_houses_sign = list(self.houses_dodecatemoria_sign)
             self.t_houses_degree = list(self.houses_dodecatemoria)
+
+        if self.type == "Atacir":
+            #rueda simple del atacir (vista "Outer only"): todo el radix
+            #girado rigidamente, cuspides incluidas, de modo que la rueda
+            #es la carta natal reubicada y no un momento real
+            arc = getattr(self, 'atacir_arc', 0.0)
+            ap = atacir_engine.rotate(self.planets_degree_ut, arc)
+            ah = atacir_engine.rotate(self.houses_degree_ut, arc)
+            self.planets_degree_ut = ap
+            self.planets_sign, self.planets_degree = self.split_sign_degree(ap)
+            self.houses_degree_ut = ah
+            self.houses_sign, self.houses_degree = self.split_sign_degree(ah)
+
+        if self.type == "Transit" and getattr(self, 'solar_active', False) and getattr(self, 'biwheel_single', '') == "Atacir":
+            #bi-rueda del atacir: la rama Transit reescribe t_* desde t_year,
+            #asi que la rueda exterior se re-deriva aqui girando el radix por
+            #el arco guardado (interior intacto)
+            arc = getattr(self, 'atacir_arc', 0.0)
+            ap = atacir_engine.rotate(self.planets_degree_ut, arc)
+            ah = atacir_engine.rotate(self.houses_degree_ut, arc)
+            self.t_planets_degree_ut = ap
+            self.t_planets_sign, self.t_planets_degree = self.split_sign_degree(ap)
+            self.t_planets_retrograde = list(self.planets_retrograde)
+            self.t_houses_degree_ut = ah
+            self.t_houses_sign, self.t_houses_degree = self.split_sign_degree(ah)
 
         if self.type == "Directed":
             #rueda simple de direcciones primarias (vista "Outer only").
@@ -3740,9 +3831,10 @@ class mainWindow:
         special_menu.append(mi(_('Dodecatemoria Chart'), self.specialDodecatemoria, 'Dodecatemoria'))
         special_menu.append(mi(_('Antiscia Chart'), self.specialAntiscia, 'Antiscia'))
         special_menu.append(mi(_('Primary Directions'), self.specialDirected, 'Directed'))
+        special_menu.append(mi(_('Atacir Chart'), self.specialAtacir, 'Atacir'))
         #bi-wheel view selector for Solar Return / Lunar Return /
         #Secondary Progression / Transit Chart / Synastry / Dodecatemoria /
-        #Antiscia / Primary Directions: both, natal (inner) only, or outer only
+        #Antiscia / Primary Directions / Atacir: both, natal (inner) only, or outer only
         special_menu.append(Gtk.SeparatorMenuItem())
         srv_top, srv_menu = submenu(_('Chart View'))
         srv_group = None
@@ -4570,7 +4662,95 @@ class mainWindow:
         self._resetChartViewBoth()
         self.updateChart()
         return
-    
+
+    def specialAtacir(self, widget):
+        #dialog asks the target date, the cycle N and the direction, then
+        #draws the bi-wheel: radix inside, chart rotated 360/N deg a year
+        #outside
+        self.win_SAT = Gtk.Dialog(parent=self.window)
+        self.win_SAT.set_icon_from_file(cfg.iconWindow)
+        self.win_SAT.set_title(_("Atacir Chart"))
+        self.win_SAT.connect("delete_event", lambda w,e: self.win_SAT.destroy())
+        self.win_SAT.move(150,150)
+        self.win_SAT.set_border_width(5)
+        self.win_SAT.set_size_request(360,260)
+
+        table = Gtk.Table(n_rows=1, n_columns=4, homogeneous=False)
+        table.set_border_width(10)
+        table.attach(Gtk.Label(label=_("Select date for Atacir")+":"), 0, 1, 0, 1, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        entry={}
+        now = datetime.datetime.now()
+
+        #last used values are remembered in astrocfg (None on first use)
+        def last(key, default):
+            val = db.getAstrocfg(key)
+            return val if val is not None else default
+
+        hbox = Gtk.HBox(spacing=4)
+        for k, lbl, ln, default in (('Y', 'Year', 4, str(now.year)),
+                                    ('M', 'Month', 2, '%02d'%(now.month)),
+                                    ('D', 'Day', 2, str(now.day))):
+            hbox.pack_start(Gtk.Label(label=_(lbl)+": "), False, False, 0)
+            entry[k]=Gtk.Entry()
+            entry[k].set_max_length(ln)
+            entry[k].set_width_chars(ln)
+            entry[k].set_text(last('atacir_'+k, default))
+            hbox.pack_start(entry[k], False, False, 0)
+        table.attach(hbox,0,1,1,2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        #cycle selector: C-12 is the reference cycle (annual profections),
+        #C-360 the 1 deg/year symbolic directions
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Cycle')+": "), False, False, 0)
+        self.atacir_cycle_list = list(atacir_engine.CYCLES)
+        entry['C']=Gtk.ComboBoxText()
+        for n in self.atacir_cycle_list:
+            entry['C'].append_text("C-%d  (%g%s)" % (n, atacir_engine.degrees_per_year(n), _("°/year")))
+        try:
+            active = self.atacir_cycle_list.index(int(last('atacir_cycle', str(atacir_engine.DEFAULT_CYCLE))))
+        except ValueError:
+            active = self.atacir_cycle_list.index(atacir_engine.DEFAULT_CYCLE)
+        entry['C'].set_active(active)
+        hbox.pack_start(entry['C'], False, False, 0)
+        table.attach(hbox,0,1,2,3, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        #direct or converse
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Direction')+": "), False, False, 0)
+        entry['R']=Gtk.ComboBoxText()
+        entry['R'].append_text(_("Direct"))
+        entry['R'].append_text(_("Converse"))
+        entry['R'].set_active(1 if last('atacir_dir', '0') == '1' else 0)
+        hbox.pack_start(entry['R'], False, False, 0)
+        table.attach(hbox,0,1,3,4, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        button = Gtk.Button(label=_("Submit"))
+        button.connect("clicked", self.specialAtacirSubmit, entry)
+        table.attach(button,0,1,4,5, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        self.win_SAT.vbox.pack_start(table, True, True, 0)
+        self.win_SAT.show_all()
+        return
+
+    def specialAtacirSubmit(self, widget, entry):
+        dt = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()))
+        cycle = self.atacir_cycle_list[entry['C'].get_active()]
+        converse = entry['R'].get_active() == 1
+        #remember last used parameters in astrocfg for the next run
+        db.setAstrocfg('atacir_Y', entry['Y'].get_text())
+        db.setAstrocfg('atacir_M', entry['M'].get_text())
+        db.setAstrocfg('atacir_D', entry['D'].get_text())
+        db.setAstrocfg('atacir_cycle', str(cycle))
+        db.setAstrocfg('atacir_dir', '1' if converse else '0')
+        openAstro.localToAtacir(dt, cycle, converse)
+        self.win_SAT.destroy()
+        #a fresh atacir chart defaults to the bi-wheel view
+        self._resetChartViewBoth()
+        self.updateChart()
+        return
+
+
     def tableMonthlyTimeline(self, widget):
         dialog = Gtk.Dialog(_("Select Month"),
                      self.window,
