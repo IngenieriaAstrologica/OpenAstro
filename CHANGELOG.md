@@ -2,6 +2,46 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Fix: New Chart / Edit Event took seconds to open — 2026-09-19
+
+The dialog did two full scans of the 149,848-row `geonames` table before it
+could appear, ~5.6 s of work on the atlas:
+
+- `db.gnearest()`, which preselects the nearest city, filtered by a
+  latitude/longitude box with no index on those columns: **2.750 s** to
+  find the 244 rows inside the box.
+- `eventDataChangedProvbox()`, filling the city combo with
+  `WHERE country=? AND admin1=?`, also unindexed: **2.878 s**.
+
+Three indexes added to the bundled `geonames.sql`:
+
+| Index | Query | Before | After |
+|-------|-------|--------|-------|
+| `idx_geonames_lat_lon` | nearest-city box | 2.750 s | 0.029 s |
+| `idx_geonames_country_admin1` | cities of a province | 2.878 s | 0.046 s |
+| `idx_admin1codes_country` | provinces of a country | 0.010 s | 0.001 s |
+
+Total data work on opening the dialog: **5.6 s → 0.097 s**. The lat/lon one
+becomes a covering index — the query reads only `id`, `latitude` and
+`longitude`, so it never touches the table.
+
+The file grows 31.31 MB → 37.41 MB (+6.10). Indexing the shipped asset
+rather than creating the indexes at runtime is deliberate: in a system
+install the atlas sits read-only under `/usr/share/openastro.org`, where
+`CREATE INDEX` would fail. `PRAGMA integrity_check` passes.
+
+Measured and ruled out along the way: the internet check (returns
+immediately, `use_geonames.org` is 0 here), and GTK widget construction —
+building the `ListStore`, filling 662 rows and attaching the combo is
+0.034 s, and even the atlas's worst province (England, 3,360 cities)
+takes 0.106 s.
+
+Adding `name` to the city index would drop the temporary sort, but costs
+1.66 MB more to save 0.4 ms on 662 rows. Not taken.
+
+### Files changed
+- `geonames.sql` — three indexes
+
 ## Fix: South Node never showed its R — 2026-09-18
 
 The South Node is derived as `planets_degree_ut[10] - 180`, the North
