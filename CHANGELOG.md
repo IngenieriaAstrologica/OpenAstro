@@ -2,6 +2,44 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: pick the day for a Lunar Return — 2026-09-20
+
+### Change
+The Lunar Return dialog takes a **day** as well as a year and month, and
+returns the lunar return **nearest that date**. It used to ask only for
+the month and always seed the search at the 15th, which gave the return
+nearest mid-month whether or not that was the one wanted.
+
+### How it works
+Barely a change, because the search was already right: the correction it
+applies is normalised to (-180, 180], so it always takes the shorter way
+round and lands on the return nearest its seed. Only the seed moved, from
+the 15th to the day asked for. `day` defaults to `None`, which keeps the
+old mid-month behaviour for any caller that does not pass one.
+
+A day the month does not have is clamped rather than raising, and the
+dialog now rejects bad input instead of letting the exception surface
+behind the window.
+
+### Verification
+Seeded at seven days across September 2026 against a real chart. The Moon
+comes back to its natal degree within **0.5 arcseconds** every time, and
+the nearest-return behaviour holds where it matters — the boundary:
+
+| Day asked | Return found | Distance |
+|-----------|--------------|----------|
+| 20 | 2026-09-09 | 11.10 d |
+| 25 | 2026-10-06 | 11.19 d |
+
+Those two returns are 27.3 days apart, so day 20 is nearer the September
+one (11.1 vs 16.2) and day 25 nearer the October one. The search switches
+where it should. No seed landed further than 11.19 days from its return,
+inside the half-month maximum.
+
+### Files changed
+- `openastro` — `localToLunar` seed day, day field and validation in
+  `specialLunar`/`specialLunarSubmit`
+
 ## Feature: Profections table — 2026-09-20
 
 ### Change
