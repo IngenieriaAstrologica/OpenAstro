@@ -26,7 +26,7 @@
 """
 
 #basics
-import math, sys, os.path, datetime, socket, gettext, codecs, webbrowser
+import math, sys, os.path, datetime, socket, gettext, codecs, webbrowser, csv, calendar
 from zoneinfo import ZoneInfo  # stdlib time zones (Python 3.9+)
 #import geonames  # unused module import
 
@@ -53,7 +53,7 @@ from gi.repository import Gtk, Gdk, GLib, GObject, Rsvg, cairo
 #internal openastro modules
 sys.path.append("/usr/lib/python3.5/dist-packages") #trying to 'fix' some problems importing openastromod on some distros
 sys.path.append("/usr/lib/python3.5/site-packages") #trying to 'fix' some problems importing openastromod on some distros
-from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine
+from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine
 
 def _rsvg_render(handle, cr):
     """Render a whole SVG handle at its natural size onto a Cairo context,
@@ -478,7 +478,7 @@ class openAstroSqlite:
             dprint('dbcheck astrodb.settings_aspect')       
             degree = [ 0 , 30 , 45 , 60 , 72 , 90 , 120 , 135 , 144 , 150 , 180 ]
             name = [ _('conjunction'), _('semi-sextile'), _('semi-square'), _('sextile'), _('quintile'), _('square'), _('trine'), _('sesquiquadrate'), _('biquintile'), _('quincunx'), _('opposition') ]
-            color =        [ '#5757e2', '#810757', '#b14e58', '#d59e28', '#1f99b3', '#dc0000', '#36d100', '#985a10', '#7a9810', '#fff600', '#510060' ]
+            color =        [ '#5757e2', '#810757', '#b14e58', '#d59e28', '#1f99b3', '#dc0000', '#36d100', '#985a10', '#7a9810', '#00796b', '#510060' ]
             visible =      [ 1 , 0 , 0 , 1 , 1 , 1 , 1 , 0 , 1 , 1 , 1 ]
             visible_grid = [ 1 , 0 , 0 , 1 , 1 , 1 , 1 , 0 , 1 , 1 , 1 ]
             is_major =     [ 1 , 0 , 0 , 1 , 0 , 1 , 1 , 0 , 0 , 0 , 1 ]
@@ -552,7 +552,7 @@ class openAstroSqlite:
             "aspect_120":"#36d100",
             "aspect_135":"#985a10",
             "aspect_144":"#7a9810",
-            "aspect_150":"#fff600",
+            "aspect_150":"#00796b",
             "aspect_180":"#510060",
             "planet_0":"#984b00",
             "planet_1":"#150052",
@@ -577,8 +577,8 @@ class openAstroSqlite:
             "planet_20":"#000000",
             "planet_21":"#000000",
             "planet_22":"#000000",
-            "planet_23":"#ff7e00",
-            "planet_24":"#FF0000",
+            "planet_23":"#000000",
+            "planet_24":"#000000",
             "planet_25":"#0000FF",
             "planet_26":"#000000",
             "planet_27":"#000000",
@@ -719,7 +719,7 @@ class openAstroSqlite:
             '#984b00','#150052','#520800','#400052','#540000','#1E88E5','#124500',
             '#6f0766','#06537f','#713f04','#4c1541','#4c1541','#33182','#000000',
             '#000000','#666f06','#000000','#000000','#000000','#000000','#000000',
-            '#000000','#000000','orange','#FF0000','#0000FF','#000000','#000000',
+            '#000000','#000000','#000000','#000000','#0000FF','#000000','#000000',
             '#000000','#000000','#000000','#000000','#000000','#000000','#000000',
             '#8B0000']
             self.value_settings_planet['visible'] = [
@@ -798,6 +798,16 @@ class openAstroSqlite:
                         self.value_settings_planet['visible_aspect_grid'][i]
                         )
                 self.cursor.execute(sql,values)
+
+        #migrate legacy default inks without touching user customizations:
+        #quincunx yellow is unreadable on white, Asc/Mc go black. Only rows
+        #still holding the old defaults are updated.
+        self.cursor.execute('UPDATE color_codes SET code="#00796b" WHERE name="aspect_150" AND (code="#fff600" OR code="#FFF600")')
+        self.cursor.execute('UPDATE settings_aspect SET color="#00796b" WHERE degree=150 AND (color="#fff600" OR color="#FFF600")')
+        self.cursor.execute('UPDATE color_codes SET code="#000000" WHERE name="planet_23" AND (code="#ff7e00" OR code="#FF7E00" OR code="orange")')
+        self.cursor.execute('UPDATE color_codes SET code="#000000" WHERE name="planet_24" AND (code="#FF0000" OR code="#ff0000")')
+        self.cursor.execute('UPDATE settings_planet SET color="#000000" WHERE id=23 AND (color="orange" OR color="#ff7e00" OR color="#FF7E00")')
+        self.cursor.execute('UPDATE settings_planet SET color="#000000" WHERE id=24 AND (color="#FF0000" OR color="#ff0000")')
 
         #commit initial changes
         self.updateHistory()
@@ -3853,6 +3863,7 @@ class mainWindow:
         tables_menu.append(mi(_('Monthly Timeline'), self.tableMonthlyTimeline, 'MonthlyTimeline'))
         tables_menu.append(mi(_('Cusp Aspects'), self.tableCuspAspects, 'CuspAspects'))
         tables_menu.append(mi(_('Fixed Stars'), self.tableFixedStars, 'FixedStars'))
+        tables_menu.append(mi(_('Firdaria'), self.tableFirdaria, 'Firdaria'))
         menubar.append(tables_top)
 
         #Zoom (radio)
@@ -3934,8 +3945,8 @@ class mainWindow:
     """
     
     def extraExportDB(self, widget):
-        chooser = Gtk.FileChooserDialog(parent=self.window, title=None,action=Gtk.FileChooserAction.SAVE,
-                                  buttons=(_("_Cancel"),Gtk.ResponseType.CANCEL,_("_Save"),Gtk.ResponseType.OK))
+        chooser = Gtk.FileChooserDialog(parent=self.window, title=None,action=Gtk.FileChooserAction.SAVE)
+        chooser.add_buttons(_("_Cancel"),Gtk.ResponseType.CANCEL,_("_Save"),Gtk.ResponseType.OK)
         chooser.set_current_folder(cfg.homedir)
         chooser.set_current_name('openastro-database.sql')
         filter = Gtk.FileFilter()
@@ -3952,8 +3963,8 @@ class mainWindow:
         chooser.destroy()
     
     def extraImportDB(self, widget):
-        chooser = Gtk.FileChooserDialog(parent=self.window, title=_("Please select database to import"),action=Gtk.FileChooserAction.OPEN,
-                                  buttons=(_("_Cancel"),Gtk.ResponseType.CANCEL,_("_Open"),Gtk.ResponseType.OK))
+        chooser = Gtk.FileChooserDialog(parent=self.window, title=_("Please select database to import"),action=Gtk.FileChooserAction.OPEN)
+        chooser.add_buttons(_("_Cancel"),Gtk.ResponseType.CANCEL,_("_Open"),Gtk.ResponseType.OK)
         chooser.set_current_folder(cfg.homedir)
         filter = Gtk.FileFilter()
         filter.set_name(_("OpenAstro.org Databases (*.sql)"))
@@ -4077,8 +4088,8 @@ class mainWindow:
 
     def doExport(self, widget):
 
-        chooser = Gtk.FileChooserDialog(parent=self.window,title=None,action=Gtk.FileChooserAction.SAVE,
-                                  buttons=(_("_Cancel"),Gtk.ResponseType.CANCEL,_("_Save"),Gtk.ResponseType.OK))
+        chooser = Gtk.FileChooserDialog(parent=self.window,title=None,action=Gtk.FileChooserAction.SAVE)
+        chooser.add_buttons(_("_Cancel"),Gtk.ResponseType.CANCEL,_("_Save"),Gtk.ResponseType.OK)
         chooser.set_current_folder(cfg.homedir)
         
         
@@ -4130,8 +4141,8 @@ class mainWindow:
     
     def doImport(self, widget):
     
-        chooser = Gtk.FileChooserDialog(parent=self.window,title=_('Select file to open'),action=Gtk.FileChooserAction.OPEN,
-                                  buttons=(_("_Cancel"),Gtk.ResponseType.CANCEL,_("_Open"),Gtk.ResponseType.OK))
+        chooser = Gtk.FileChooserDialog(parent=self.window,title=_('Select file to open'),action=Gtk.FileChooserAction.OPEN)
+        chooser.add_buttons(_("_Cancel"),Gtk.ResponseType.CANCEL,_("_Open"),Gtk.ResponseType.OK)
         chooser.set_current_folder(cfg.homedir)
         
         filter = Gtk.FileFilter()
@@ -4791,6 +4802,21 @@ class mainWindow:
         if ret == Gtk.ResponseType.ACCEPT:
             self.tMTentry['Y']=self.tMTentry['Y'].get_text()
             self.tMTentry['M']=self.tMTentry['M'].get_text()
+            try:
+                y = int(self.tMTentry['Y'])
+                m = int(self.tMTentry['M'])
+            except ValueError:
+                dialog.destroy()
+                md = Gtk.MessageDialog(self.window,0,Gtk.MESSAGE_ERROR,
+                    Gtk.BUTTONS_CLOSE,_("Year and Month must be integers"))
+                md.run(); md.destroy()
+                return
+            if not (1 <= m <= 12) or not (1000 <= y <= 9999):
+                dialog.destroy()
+                md = Gtk.MessageDialog(self.window,0,Gtk.MESSAGE_ERROR,
+                    Gtk.BUTTONS_CLOSE,_("Month must be 1..12 and Year 1000..9999"))
+                md.run(); md.destroy()
+                return
             dialog.destroy()
             self.tableMonthlyTimelineShow()
         else:
@@ -4807,8 +4833,8 @@ class mainWindow:
         print_op.connect("draw_page", self.tableMonthlyTimelinePrintDraw)
 
         if pdf:
-            chooser = Gtk.FileChooserDialog(title=_("Select Export Filename"),action=Gtk.FileChooserAction.SAVE,
-                                  buttons=(_("_Cancel"),Gtk.ResponseType.CANCEL,_("_Save"),Gtk.ResponseType.OK))
+            chooser = Gtk.FileChooserDialog(title=_("Select Export Filename"),action=Gtk.FileChooserAction.SAVE)
+            chooser.add_buttons(_("_Cancel"),Gtk.ResponseType.CANCEL,_("_Save"),Gtk.ResponseType.OK)
             chooser.set_current_folder(cfg.homedir)
             chooser.set_current_folder(cfg.homedir)
             chooser.set_current_name(name)
@@ -4861,6 +4887,12 @@ class mainWindow:
             svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
             svg.set_dpi(900)
             _rsvg_render(svg, cr)
+        elif(self.tabletype == "firdaria"):
+            self.tableFirdaria(None,printing)
+            #draw svg for printing
+            svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
+            svg.set_dpi(900)
+            _rsvg_render(svg, cr)
         elif(self.tabletype == "cuspaspects"):
             self.tableCuspAspects(None,printing)
             #draw svg for printing
@@ -4877,18 +4909,23 @@ class mainWindow:
 
     def tableMonthlyTimelineShow(self, printing=None):
         self.tabletype="timeline"
-        y = int(self.tMTentry['Y'])
-        m = int(self.tMTentry['M'])
+        try:
+            y = int(self.tMTentry['Y'])
+            m = int(self.tMTentry['M'])
+        except (ValueError, KeyError):
+            return
+        if not (1 <= m <= 12) or not (1000 <= y <= 9999):
+            return
         tz = datetime.timedelta(seconds=float(openAstro.timezone)*float(3600))
-        startdate = datetime.datetime(y,m,1,12) - tz
-        q,r = divmod(startdate.month, 12)
-        enddate = datetime.datetime(startdate.year+q, r+1, 1,12)
-        delta = enddate - startdate
+        #real days of the month: the old enddate-startdate in UTC-truncated
+        #frames lost a day with western timezones (Sep showed 29) and broke
+        #entirely past +12. Sample each day at local noon instead.
+        ndays = calendar.monthrange(y, m)[1]
         atgrid={}
         astypes={}
         retrogrid={}
-        for d in range(delta.days):
-            cdate = startdate + datetime.timedelta(days=d)
+        for d in range(ndays):
+            cdate = datetime.datetime(y, m, d+1, 12) - tz
             tmoddata = ephemeris.ephData(cdate.year,cdate.month,cdate.day,cdate.hour,
                 openAstro.geolon,openAstro.geolat,openAstro.altitude,openAstro.planets,
                 openAstro.zodiac,db.astrocfg)
@@ -4909,12 +4946,16 @@ class mainWindow:
                     #loop orbs
                     if (openAstro.planets[i]['visible'] == 1) & (openAstro.planets[x]['visible'] == 1): 
                         for z in range(len(openAstro.aspects)):
-                            #only major aspects
-                            if openAstro.aspects[z]['is_major'] != 1:
+                            #respect Settings -> Aspects selection
+                            if openAstro.aspects[z].get('visible', 0) != 1 and openAstro.aspects[z].get('visible_grid', 0) != 1:
                                 continue
-                            #check for personal planets and determine orb
-                            orb_before = 4
-                            orb_after = 4
+                            #use configured orb per aspect
+                            try:
+                                cfg_orb = float(openAstro.aspects[z]['orb'])
+                            except (ValueError, TypeError, KeyError):
+                                cfg_orb = 4
+                            orb_before = cfg_orb
+                            orb_after = cfg_orb
                             #check if we want to display this aspect    
                             if  ( float(openAstro.aspects[z]['degree']) - orb_before ) <= diff <= ( float(openAstro.aspects[z]['degree']) + orb_after ):
                                 orb = diff - openAstro.aspects[z]['degree']
@@ -4931,16 +4972,28 @@ class mainWindow:
                                 if s not in atgrid:
                                     atgrid[s]={}
                                 atgrid[s][d]=orb
-        #sort
+        #sort in Chaldean order (slowest first), transit then natal:
+        #Pluto, Neptune, Uranus, Saturn, Jupiter, Mars, Sun, Venus,
+        #Mercury, Moon; remaining points keep their relative order after
+        _chaldean = {9:0, 8:1, 7:2, 6:3, 5:4, 4:5, 0:6, 3:7, 2:8, 1:9}
+        def _chrank(p):
+            return _chaldean.get(p, 10 + p)
         keys = list(astypes.keys())
-        keys.sort()
+        keys.sort(key=lambda s: (_chrank(astypes[s][1]), _chrank(astypes[s][0]), astypes[s][2]))
+        #keep the computed table for CSV export
+        self._tmt_keys = keys
+        self._tmt_astypes = astypes
+        self._tmt_atgrid = atgrid
+        self._tmt_retrogrid = retrogrid
+        self._tmt_ndays = ndays
+        self._tmt_ym = (y, m)
         pages = int(math.ceil(len(keys)/65.0))
         
         out = ""
         #make numbers of days in month
         dx=[80]
         skipdays = [9,19]
-        for d in range(delta.days):
+        for d in range(ndays):
             if d in skipdays:
                 dx.append(dx[-1]+40)
             else:
@@ -4955,7 +5008,7 @@ class mainWindow:
             if pagelen > 65:
                 pagelen = 66
             ylen = ((len(keys)+1)-p*65)*16  
-            for a in range(delta.days):
+            for a in range(ndays):
                 out += '<text x="%s" y="%s" style="fill: %s; font-size: 10">%02d</text>\n'%(
                     dx[a],ystart,openAstro.colors['paper_0'],a+1)
                 out += '<line x1="%s" y1="%s" x2="%s" y2="%s" style="stroke: %s; stroke-width: .5; stroke-opacity:1;"/>\n'%(
@@ -4997,10 +5050,16 @@ class mainWindow:
             #inner planet
             out += '<g transform="translate(40,%s)"><g transform="scale(.5)"><use x="0" y="0" xlink:href="#%s" /></g></g>\n'%(y,
                 openAstro.svgSafeHref(openAstro.planets[i]['name']))        
-            for d in range(delta.days):                 
+            for d in range(ndays):
                 if d in atgrid[keys[m]]:
                     orb = atgrid[keys[m]][d]
-                    op = .1+(.7-(orb/(4/.7))) #4 is maxorb
+                    try:
+                        maxorb = float(openAstro.aspects[z]['orb'])
+                    except (ValueError, TypeError, KeyError):
+                        maxorb = 4
+                    if maxorb <= 0:
+                        maxorb = 4
+                    op = .1+(.7-(orb/(maxorb/.7))) #maxorb from Settings
                     if op > 1:
                         op = 1
                     strop = str(float(orb))
@@ -5027,8 +5086,13 @@ class mainWindow:
             td['zodiac_color_%s'%(i)]=openAstro.colors["zodiac_icon_%s" %(i)]
         for i in range(len(openAstro.aspects)):
             td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
+        #final guard: if y/m somehow invalid here, use current month/year
+        if not (1 <= m <= 12) or not (1000 <= y <= 9999):
+            import datetime as _dt
+            now = _dt.datetime.now()
+            y, m = now.year, now.month
         td['stringTitle'] = "%s Timeline for %s"%(
-            startdate.strftime("%B %Y"),openAstro.name)
+            datetime.datetime(y,m,1).strftime("%B %Y"),openAstro.name)
             
         pagesY = (1188 * pages)+10 #ten is buffer between pages
         if printing:
@@ -5081,6 +5145,9 @@ class mainWindow:
             button = Gtk.Button(label=_('Save as PDF'))
             button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages,pdf=True,window=self.win_TMT,name="timeline-%s.pdf"%(openAstro.name)))
             hbox.pack_start(button,False,False,0)
+            button = Gtk.Button(label=_('Save as CSV'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelineCSV(window=self.win_TMT))
+            hbox.pack_start(button,False,False,0)
             vbox.pack_start(hbox,False,False,0)
             draw = drawSVG()
             draw.setSVG(cfg.tempfilenametable)
@@ -5091,6 +5158,74 @@ class mainWindow:
         
             self.win_TMT.add(vbox)
             self.win_TMT.show_all()
+        return
+
+    def tableMonthlyTimelineCSV(self, window):
+        #UTF-8 glyphs for the CSV: standard astrological symbols. Bodies
+        #without one (angles, lots, minor points) fall back to their short
+        #label; quintile/biquintile use the traditional Q/bQ notation and
+        #semisquare the angle sign.
+        planet_glyphs = {
+            'sun':'\u2609','moon':'\u263d','mercury':'\u263f','venus':'\u2640',
+            'mars':'\u2642','jupiter':'\u2643','saturn':'\u2644','uranus':'\u2645',
+            'neptune':'\u2646','pluto':'\u2647',
+            'mean node':'\u260a','true node':'\u260a','south node':'\u260b',
+            'mean apogee':'\u26b8','osc. apogee':'\u26b8','true lilith':'\u26b8',
+            'intp. apogee':'\u26b8',
+            'earth':'\u2295','chiron':'\u26b7',
+            'ceres':'\u26b3','pallas':'\u26b4','juno':'\u26b5','vesta':'\u26b6',
+            'day pars':'\u2295','night pars':'\u2295','marriage pars':'\u2295',
+            'lot_of_infortune':'\u2295'}
+        aspect_glyphs = {
+            0:'\u260c',30:'\u26ba',45:'\u2220',60:'\u26b9',72:'Q',90:'\u25a1',
+            120:'\u25b3',135:'\u26bc',144:'bQ',150:'\u26bb',180:'\u260d'}
+        def body_glyph(p):
+            if p['name'] in planet_glyphs:
+                return planet_glyphs[p['name']]
+            return p.get('label_short') or p.get('label') or p['name']
+        keys = getattr(self, '_tmt_keys', [])
+        astypes = getattr(self, '_tmt_astypes', {})
+        atgrid = getattr(self, '_tmt_atgrid', {})
+        retrogrid = getattr(self, '_tmt_retrogrid', {})
+        ndays = getattr(self, '_tmt_ndays', 0)
+        y, m = getattr(self, '_tmt_ym', (0, 0))
+        chooser = Gtk.FileChooserDialog(title=_("Select Export Filename"),action=Gtk.FileChooserAction.SAVE)
+        chooser.add_buttons(_("_Cancel"),Gtk.ResponseType.CANCEL,_("_Save"),Gtk.ResponseType.OK)
+        chooser.set_current_folder(cfg.homedir)
+        chooser.set_current_name("timeline-%04d-%02d-%s.csv"%(y,m,openAstro.name))
+        filter = Gtk.FileFilter()
+        filter.set_name(_("CSV Files (*.csv)"))
+        filter.add_pattern("*.csv")
+        chooser.add_filter(filter)
+        response = chooser.run()
+        if response != Gtk.ResponseType.OK:
+            chooser.destroy()
+            return
+        filename = chooser.get_filename()
+        chooser.destroy()
+        #utf-8-sig (BOM) so Excel opens it as UTF-8 directly
+        with open(filename, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow([_("Transit"), _("Aspect"), _("Natal")]
+                + ["%02d"%(d+1) for d in range(ndays)])
+            for s in keys:
+                i, x, z = astypes[s]
+                transit = body_glyph(openAstro.planets[x])
+                natal = body_glyph(openAstro.planets[i])
+                try:
+                    aspect = aspect_glyphs[int(openAstro.aspects[z]['degree'])]
+                except (ValueError, TypeError, KeyError):
+                    aspect = openAstro.aspects[z]['name']
+                row = [transit, aspect, natal]
+                for d in range(ndays):
+                    if d in atgrid.get(s, {}):
+                        cell = "%.2f"%(atgrid[s][d])
+                        if retrogrid.get(s, {}).get(d):
+                            cell += " R"
+                        row.append(cell)
+                    else:
+                        row.append("")
+                writer.writerow(row)
         return
 
     def tableCuspAspects(self, widget, printing=None):
@@ -5268,6 +5403,152 @@ class mainWindow:
             self.win_TCA.show_all()     
         return
         
+    def tableFirdaria(self, widget, printing=None):
+        #Firdaria (Morinus firdaria.py): the 75-year chain of time lords,
+        #each period split into seven sub-periods except the nodes'.
+        #The sect decides the order; nocturnal charts follow Al-Biruni
+        #(Bonatti's variant moves the nodes mid-chain).
+        self.tabletype="firdaria"
+
+        #sect, as swiss.py computes it for the lots: diurnal when the Sun
+        #is above the horizon
+        sun = openAstro.planets_degree_ut[0]
+        asc = openAstro.houses_degree_ut[0]
+        day_chart = (sun - asc) % 360.0 >= 180.0
+        bonatti = db.getAstrocfg('firdaria_bonatti') == '1'
+
+        #period lord -> index in openAstro.planets, for label and colour
+        RULER_TO_PLANET = {firdaria_engine.SATURN: 6, firdaria_engine.JUPITER: 5,
+                           firdaria_engine.MARS: 4, firdaria_engine.SUN: 0,
+                           firdaria_engine.VENUS: 3, firdaria_engine.MERCURY: 2,
+                           firdaria_engine.MOON: 1, firdaria_engine.NORTH_NODE: 10,
+                           firdaria_engine.SOUTH_NODE: 29}
+
+        def ruler_label(r):
+            i = RULER_TO_PLANET[r]
+            try:
+                return openAstro.planets[i]['label']
+            except (IndexError, KeyError):
+                return str(r)
+
+        def ruler_color(r):
+            return openAstro.planet_color(RULER_TO_PLANET[r])
+
+        rows = firdaria_engine.periods(
+            datetime.datetime(openAstro.year, openAstro.month, openAstro.day),
+            day_chart, bonatti)
+
+        #Layout. Each row stacks two lines in the sub-period columns, so it
+        #needs room for both; 20px only fitted one and the dates spilled into
+        #the row below. The seven sub-periods run from SUB_X0 to the right
+        #edge of the box (725): 7 x 43 = 301, and a full date at 7px is about
+        #34px wide, so the columns clear each other.
+        ROW_H = 30
+        SUB_X0 = 420
+        SUB_STEP = 43
+        textstyle = "font-size: 11px; fill: %s" % (openAstro.colors['paper_0'],)
+        substyle = "font-size: 9px; fill: %s" % (openAstro.colors['paper_0'],)
+        headerstyle = "font-size: 12px; font-weight: bold; fill: %s" % (openAstro.colors['paper_0'],)
+        gridstyle = 'stroke:%s; stroke-width: 1px; stroke-opacity:.6; fill:none' % (openAstro.colors['paper_0'],)
+
+        out = '<g transform="translate(40,60)">'
+        sect_name = _("diurnal") if day_chart else (
+            _("nocturnal (Bonatti)") if bonatti else _("nocturnal (Al-Biruni)"))
+        out += '<text x="0" y="0" style="%s">%s: %s</text>\n' % (
+            headerstyle, _("Sect"), sect_name)
+        out += '<text x="0" y="24" style="%s">%s</text>\n' % (headerstyle, _("Ruler"))
+        out += '<text x="150" y="24" style="%s">%s</text>\n' % (headerstyle, _("From"))
+        out += '<text x="260" y="24" style="%s">%s</text>\n' % (headerstyle, _("To"))
+        out += '<text x="370" y="24" style="%s">%s</text>\n' % (headerstyle, _("Years"))
+        out += '<text x="%s" y="24" style="%s">%s</text>\n' % (SUB_X0, headerstyle, _("Sub-periods"))
+
+        y = 30
+        for p in rows:
+            #each row carries two lines in the sub-period columns (ruler over
+            #start date), so the box has to be tall enough for both: the box
+            #spans y-15 to y+11 and the two baselines sit at y-3 and y+7
+            y += ROW_H
+            out += '<rect x="-15" y="%s" width="740" height="%s" style="%s"/>\n' % (y - 15, ROW_H - 4, gridstyle)
+            out += '<text x="0" y="%s" style="font-size: 11px; font-weight: bold; fill: %s">%s</text>\n' % (
+                y, ruler_color(p['ruler']), ruler_label(p['ruler']))
+            out += '<text x="150" y="%s" style="%s">%s</text>\n' % (y, textstyle, p['start'].strftime('%Y-%m-%d'))
+            #the period runs up to, but not including, the next boundary
+            out += '<text x="260" y="%s" style="%s">%s</text>\n' % (
+                y, textstyle, (p['end'] - datetime.timedelta(days=1)).strftime('%Y-%m-%d'))
+            out += '<text x="370" y="%s" style="%s">%s</text>\n' % (y, textstyle, p['years'])
+            if p['is_node']:
+                out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (
+                    SUB_X0, y, substyle, _("(the nodes take no sub-periods)"))
+                continue
+            x = SUB_X0
+            for (r, s_start, _s_end) in p['sub']:
+                out += '<text x="%s" y="%s" style="font-size: 8px; fill: %s">%s</text>\n' % (
+                    x, y - 3, ruler_color(r), ruler_label(r)[:3])
+                out += '<text x="%s" y="%s" style="font-size: 7px; fill: %s">%s</text>\n' % (
+                    x, y + 7, openAstro.colors['paper_0'], s_start.strftime('%Y-%m-%d'))
+                x += SUB_STEP
+        out += "</g>"
+
+        td = {}
+        td['paper_color_0']=openAstro.colors["paper_0"]
+        td['paper_color_1']=openAstro.colors["paper_1"]
+        for i in range(len(openAstro.planets)):
+            td['planets_color_%s'%(i)]=openAstro.colors["planet_%s"%(i)]
+        for i in range(12):
+            td['zodiac_color_%s'%(i)]=openAstro.colors["zodiac_icon_%s" %(i)]
+        for i in range(len(openAstro.aspects)):
+            td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
+        td['stringTitle'] = "Firdaria for %s"%(openAstro.name)
+
+        pages=1
+        pagesY = (1188 * pages)+10
+        if printing:
+            td['svgWidth'] = printing['width']
+            td['svgHeight'] = printing['height']
+            td['viewbox'] = "0 %s 840 1188" %( printing['pagenum']*(1188+10) )
+        else:
+            td['svgWidth'] = 1050
+            td['svgHeight'] = (td['svgWidth']/840.0)* pagesY
+            td['viewbox'] = "0 0 840 %s" %( pagesY )
+
+        td['data'] = out
+        td['pagesRect'] = '<rect x="0" y="0" width="840" height="1188" style="fill: %s;" />' % (openAstro.colors['paper_1'],)
+
+        f=open(cfg.xml_svg_table)
+        template=Template(f.read()).substitute(td)
+        f.close()
+        if printing:
+            f=open(cfg.tempfilenametableprint,"w")
+        else:
+            f=open(cfg.tempfilenametable,"w")
+        f.write(template)
+        f.close()
+
+        if printing == None:
+            self.win_TFD = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+            self.win_TFD.connect("destroy", lambda w: self.win_TFD.destroy())
+            self.win_TFD.set_title("OpenAstro.org Firdaria")
+            self.win_TFD.set_icon_from_file(cfg.iconWindow)
+            self.win_TFD.set_size_request(td['svgWidth']+30, 700)
+            self.win_TFD.move(50,50)
+            vbox = Gtk.VBox()
+            hbox = Gtk.HBox()
+            button = Gtk.Button(label=_('Print'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=1,pdf=False,window=self.win_TFD,name="firdaria-%s.pdf"%(openAstro.name)))
+            hbox.pack_start(button,False,False,0)
+            button = Gtk.Button(label=_('Save as PDF'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=1,pdf=True,window=self.win_TFD,name="firdaria-%s.pdf"%(openAstro.name)))
+            hbox.pack_start(button,False,False,0)
+            vbox.pack_start(hbox,False,False,0)
+            draw = drawSVG()
+            draw.setSVG(cfg.tempfilenametable)
+            scrolledwindow = Gtk.ScrolledWindow()
+            scrolledwindow.add(draw)
+            vbox.pack_start(scrolledwindow,True,True,0)
+            self.win_TFD.add(vbox)
+            self.win_TFD.show_all()
+        return
+
     def tableFixedStars(self, widget, printing=None):
         #Fixed stars (Morinus fixstars.py): only stars in conjunction
         #(orb 1 degree) with a visible planet or a cusp are listed:
@@ -5847,8 +6128,8 @@ class mainWindow:
         print_op.connect("begin_print", self.doPrintBegin)
         print_op.connect("draw_page", self.doPrintDraw)
 
-        chooser = Gtk.FileChooserDialog(parent=self.window, title=_("Select Export Filename"),action=Gtk.FileChooserAction.SAVE,
-                                  buttons=(_("_Cancel"),Gtk.ResponseType.CANCEL,_("_Save"),Gtk.ResponseType.OK))
+        chooser = Gtk.FileChooserDialog(parent=self.window, title=_("Select Export Filename"),action=Gtk.FileChooserAction.SAVE)
+        chooser.add_buttons(_("_Cancel"),Gtk.ResponseType.CANCEL,_("_Save"),Gtk.ResponseType.OK)
         chooser.set_current_folder(cfg.homedir)
         chooser.set_current_name(openAstro.name+'.pdf')
         filter = Gtk.FileFilter()
