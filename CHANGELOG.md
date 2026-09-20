@@ -2,6 +2,103 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: transit date and converse transits — 2026-09-20
+
+### Change
+The transit dialog now asks **when**. It used to ask only for the measure and
+always draw the present moment; it takes year, month, day, hour and minute
+— with a **Now** button that puts the current moment back in one click, so
+the old behaviour is still a click away — and a **Direction** selector:
+
+- **Direct**: the sky of the requested moment, as before.
+- **Converse**: that moment mirrored about the birth instant, i.e. the
+  heavens running backwards from the nativity.
+
+Every field is remembered in `astrocfg` (`transit_Y/M/D/h/m`, `transit_dir`,
+alongside the `transit_measure` already stored), so reopening the dialog
+returns the last request. Bad input is refused with a message and the dialog
+stays open with the values still in it.
+
+This closes the roadmap's §7 and §8, which are one dialog and were done as one
+change.
+
+### How it works
+`openastromod/transit.py` — new, stdlib only (`datetime` + `zoneinfo`), no
+ephemerides, so it cannot drift against the Swiss Ephemeris. It answers the
+only question a transit poses, which is *which instant*: the outer wheel
+itself is a plain ephemeris reading. `moment()` turns the dialog's wall-clock
+time into the UT instant to draw, plus that instant's own UTC offset (so a
+converse moment landing in another DST season — or before the zone had DST at
+all — reports its own offset, not the requested date's).
+
+**Why converse is a mirror of the instant.** Primary directions and atacires
+both run on an arc that is *linear* in the time elapsed since birth (Naibod
+0.9856°/year, atacir C-N 360/N °/year), and there "converse" means negating
+the arc — which, because the arc is linear in elapsed time, is the very same
+statement as negating the elapsed time. A transit has no arc to negate: its
+positions are whatever the ephemeris says, a nonlinear function of the
+instant. What generalises is the parameter, not the formula — the signed
+displacement from birth:
+
+    t_sky = t_birth - (t_requested - t_birth)
+
+So the birth instant is the fixed point (at zero displacement both directions
+give the natal sky), and it is the exact midpoint of the direct and converse
+moments. Only the instant is mirrored, never the place: the converse sky is
+still read from where the chart is cast. The mirrored instant is rounded to
+the whole second, because the chart stores its hour as decimal hours built
+from h/m/s and the birth hour is a decimal that would otherwise lose most of
+a second to truncation.
+
+In `openastro`, the new `openAstroInstance.localToTransit()` replaces the
+date arithmetic that was inlined in the dialog's submit handler, following
+`localToDirected()` / `localToAtacir()`: the radix stays in `self.*` and the
+transit moment goes into `self.t_*` as the outer wheel. Called with no
+argument it still draws right now, so nothing else in the program had to
+change. Both existing measures (ecliptic and ascensional mundo contacts) work
+in either direction.
+
+### Verification
+Example chart 1987-04-09 12:00:30 UT, lon 2.0367, lat 41.3436 (natal Sun
+19°Ari06'34", Moon 24°Leo07'13"). Everything below ran under WSL with real
+Swiss Ephemeris; the two UI checks exec the **method bodies lifted from the
+`openastro` script itself**, so what was tested is the shipped code, not a
+copy of it.
+
+The requested date really is the date drawn: local 2026-09-20 12:00 at the
+chart place resolves to 10:00 UT (offset +2, CEST) and the wheel gets Sun
+27°Vir28'16", Moon 14°Cap23'31", Saturn 12°Ari23'27" — the Sun advances
+0.9772° over the following day, and the same clock time a year earlier is
+0.2°+ away, so the positions belong to that date and no other. A winter
+request (2026-01-15 09:30 local) resolves at offset +1, CET.
+
+The converse is symmetric about birth, and to the tenth of a millisecond:
+the requested moment sits +14408.916319 days from the nativity and the
+converse moment −14408.916319, landing on 1947-10-27 14:01 UT, where the
+wheel gets Sun 3°Sco18'21", Moon 5°Ari37'58", Saturn 21°Leo22'36". All ten
+bodies match an independently mirrored instant to 1e-9°. At zero displacement
+both directions return the natal sky; mirroring twice returns the original
+moment; and a birth hour carrying a fractional second still yields
+whole-second moments with a symmetry error of 0.
+
+The dialog, driven headless under Xvfb: first use offers today with
+Direct/Ecliptic; **Now** refills the fields; a request of 1999-12-31 23:45
+converse ascensional reaches `localToTransit()` with exactly those arguments
+and is stored in `astrocfg`; reopening returns all seven remembered values.
+Refused without reaching the engine — month 13, day 32, hour 25, minute 99,
+an empty year, letters, year 999, and 1999-02-29 — while 2000-02-29 is
+accepted, as a leap year should be.
+
+Also checked: `primary.transit_oa_pair()` still gets what it needs from the
+new moment (ascensional measure untouched), the direct chart's title string
+is byte-identical to the old one, and no dialog method calls an
+`openAstroInstance` method through `self` (the cross-class trap).
+
+### Files changed
+- `openastromod/transit.py` — new: the transit instant, direct and converse
+- `openastro` — `localToTransit()`, date/time and direction fields plus
+  validation in `specialTransit` / `specialTransitSubmit`
+
 ## Feature: pick the day for a Lunar Return — 2026-09-20
 
 ### Change
