@@ -5455,36 +5455,68 @@ class mainWindow:
             except (IndexError, KeyError):
                 return str(i)
 
-        ROW_H = 22
+        #Layout. A real chart has ~18 visible bodies, so 153 pairs and well
+        #over a page of activated rows: the table paginates instead of
+        #running off the sheet. Contacts go on the row's own baseline (a
+        #second line would fall outside the box) and get a wide column,
+        #because labels like "Lot of Infortune" are long; past CONTACTS_MAX
+        #the rest are counted rather than drawn.
+        ROW_H = 24
+        PAGE_H = 1188.0
+        PAGE_GAP = 10.0
+        TOP = 60.0          #the group's own translate
+        BOTTOM_MARGIN = 24.0
+        CONTACT_X = 410
+        CONTACT_STEP = 150
+        CONTACTS_MAX = 2
         textstyle = "font-size: 11px; fill: %s" % (openAstro.colors['paper_0'],)
         headerstyle = "font-size: 12px; font-weight: bold; fill: %s" % (openAstro.colors['paper_0'],)
         gridstyle = 'stroke:%s; stroke-width: 1px; stroke-opacity:.6; fill:none' % (openAstro.colors['paper_0'],)
 
-        out = '<g transform="translate(40,60)">'
-        out += '<text x="0" y="0" style="%s">%s %s%s  —  %s %d, %s %d</text>\n' % (
-            headerstyle, _("Dial"), int(midpoints_engine.DIAL), "\xb0",
-            _("orb"), orb, _("pairs shown"), len(rows))
-        out += '<text x="0" y="24" style="%s">%s</text>\n' % (headerstyle, _("Midpoint"))
-        out += '<text x="200" y="24" style="%s">%s</text>\n' % (headerstyle, _("Position"))
-        out += '<text x="330" y="24" style="%s">%s%s</text>\n' % (headerstyle, _("Dial"), "\xb0")
-        out += '<text x="410" y="24" style="%s">%s</text>\n' % (headerstyle, _("Activated by"))
+        def page_top(p):
+            #group coordinates of the first row of page p
+            return p * (PAGE_H + PAGE_GAP) - TOP + 40.0
 
-        y = 30
+        def page_limit(p):
+            return p * (PAGE_H + PAGE_GAP) + PAGE_H - TOP - BOTTOM_MARGIN
+
+        def headers(y):
+            h = '<text x="0" y="%s" style="%s">%s %d%s  —  %s %g, %s %d</text>\n' % (
+                y - 24, headerstyle, _("Dial"), int(midpoints_engine.DIAL), "\xb0",
+                _("orb"), orb, _("activated pairs"), len(rows))
+            for cx, text in ((0, _("Midpoint")), (200, _("Position")),
+                             (330, _("Dial") + "\xb0"), (CONTACT_X, _("Activated by"))):
+                h += '<text x="%s" y="%s" style="%s">%s</text>\n' % (cx, y, headerstyle, text)
+            return h
+
+        out = '<g transform="translate(40,%d)">' % (int(TOP),)
+        page = 0
+        y = page_top(page)
+        out += headers(y)
         for r in rows:
             y += ROW_H
+            if y > page_limit(page):
+                #start the next sheet, repeating the column headers
+                page += 1
+                y = page_top(page)
+                out += headers(y)
+                y += ROW_H
             out += '<rect x="-15" y="%s" width="740" height="%s" style="%s"/>\n' % (y - 15, ROW_H - 4, gridstyle)
             out += '<text x="0" y="%s" style="font-size: 11px; fill: %s">%s/%s</text>\n' % (
                 y, openAstro.planet_color(r['a']), label(r['a']), label(r['b']))
             out += '<text x="200" y="%s" style="%s">%s</text>\n' % (y, textstyle, fmt_lon(r['lon']))
             out += '<text x="330" y="%s" style="%s">%05.2f%s</text>\n' % (y, textstyle, r['dial'], "\xb0")
-            x = 410
-            for (k, sep) in r['contacts']:
-                out += '<text x="%s" y="%s" style="font-size: 11px; fill: %s">%s</text>\n' % (
-                    x, y, openAstro.planet_color(k), label(k))
-                out += '<text x="%s" y="%s" style="font-size: 8px; fill: %s">%.2f%s</text>\n' % (
-                    x, y + 9, openAstro.colors['paper_0'], sep, "\xb0")
-                x += 78
+            x = CONTACT_X
+            for (k, sep) in r['contacts'][:CONTACTS_MAX]:
+                out += '<text x="%s" y="%s" style="font-size: 10px; fill: %s">%s %.2f%s</text>\n' % (
+                    x, y, openAstro.planet_color(k), label(k), sep, "\xb0")
+                x += CONTACT_STEP
+            extra = len(r['contacts']) - CONTACTS_MAX
+            if extra > 0:
+                out += '<text x="%s" y="%s" style="font-size: 9px; fill: %s">+%d</text>\n' % (
+                    x, y, openAstro.colors['paper_0'], extra)
         out += "</g>"
+        pages = page + 1
 
         td = {}
         td['paper_color_0']=openAstro.colors["paper_0"]
@@ -5497,7 +5529,7 @@ class mainWindow:
             td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
         td['stringTitle'] = "Midpoints for %s"%(openAstro.name)
 
-        pages=1
+        #`pages` was counted while laying the rows out
         pagesY = (1188 * pages)+10
         if printing:
             td['svgWidth'] = printing['width']
@@ -5509,7 +5541,11 @@ class mainWindow:
             td['viewbox'] = "0 0 840 %s" %( pagesY )
 
         td['data'] = out
-        td['pagesRect'] = '<rect x="0" y="0" width="840" height="1188" style="fill: %s;" />' % (openAstro.colors['paper_1'],)
+        #one sheet of paper per page, stacked with the template's gap
+        td['pagesRect'] = ''.join(
+            '<rect x="0" y="%s" width="840" height="1188" style="fill: %s;" />' % (
+                p * (1188 + 10), openAstro.colors['paper_1'])
+            for p in range(pages))
 
         f=open(cfg.xml_svg_table)
         template=Template(f.read()).substitute(td)
@@ -5531,10 +5567,10 @@ class mainWindow:
             vbox = Gtk.VBox()
             hbox = Gtk.HBox()
             button = Gtk.Button(label=_('Print'))
-            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=1,pdf=False,window=self.win_TMP,name="midpoints-%s.pdf"%(openAstro.name)))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=False,window=self.win_TMP,name="midpoints-%s.pdf"%(openAstro.name)))
             hbox.pack_start(button,False,False,0)
             button = Gtk.Button(label=_('Save as PDF'))
-            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=1,pdf=True,window=self.win_TMP,name="midpoints-%s.pdf"%(openAstro.name)))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=True,window=self.win_TMP,name="midpoints-%s.pdf"%(openAstro.name)))
             hbox.pack_start(button,False,False,0)
             vbox.pack_start(hbox,False,False,0)
             draw = drawSVG()
