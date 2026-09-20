@@ -233,6 +233,24 @@ def solar_arc_ra(birth_jd_ut, prog_jd_ut):
 	return (ra_prog - ra_natal + 180.0) % 360.0 - 180.0
 
 
+def solar_arc_lon(birth_jd_ut, age_years):
+	"""Arc of the progressed Sun in ECLIPTIC LONGITUDE, signed.
+
+	The solar arc of the symbolic directions, as distinct from
+	`solar_arc_ra` above, which measures the same travel in right
+	ascension for the primary directions. One ephemeris day per year of
+	life, so the arc comes out near a degree a year -- which is what
+	Naibod's key approximates with a constant.
+
+	Signed, so a negative age gives the converse arc. Folded into
+	(-180, 180], which is unambiguous for any real lifespan but would be
+	wrong past 180 years of age.
+	"""
+	lon_natal = swe.calc_ut(birth_jd_ut, swe.SUN, swe.FLG_SWIEPH)[0][0]
+	lon_prog = swe.calc_ut(birth_jd_ut + age_years, swe.SUN, swe.FLG_SWIEPH)[0][0]
+	return (lon_prog - lon_natal + 180.0) % 360.0 - 180.0
+
+
 def calculate_direction_arc(age_years, birth_jd_ut, key="naibod"):
 	"""Direction arc for an age, by time key. Negative ages give converse arcs."""
 	if key == "naibod":

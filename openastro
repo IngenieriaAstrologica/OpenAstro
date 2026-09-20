@@ -1569,7 +1569,7 @@ class openAstroInstance:
         openAstro.transit=True
         return
 
-    def localToAtacir(self, dt, cycle=atacir_engine.DEFAULT_CYCLE, converse=False):
+    def localToAtacir(self, dt, cycle=atacir_engine.DEFAULT_CYCLE, converse=False, key="cycle"):
         #Atacir (Demetrio Santos; "profection" in Morinus) as the outer
         #wheel: the radix stays in self.* and the whole chart rotated by
         #360/N degrees a year goes to self.t_*, reusing the transit ring.
@@ -1589,12 +1589,21 @@ class openAstroInstance:
         natal = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
 
         target_jd = primary_engine.julday(dt_utc.year,dt_utc.month,dt_utc.day,self.decHourJoin(dt_utc.hour,dt_utc.minute,dt_utc.second))
-        arc = atacir_engine.arc_for_jds(natal.jd_ut, target_jd, cycle)
-        if converse:
-            arc = -arc
+        if key == "solar_arc":
+            #same rigid rotation, but the arc comes from the progressed Sun
+            #instead of a constant rate: this is the solar-arc direction.
+            #A cycle is still stored so the chart can be redrawn either way.
+            age = (target_jd - natal.jd_ut) / atacir_engine.TROPICAL_YEAR
+            arc = primary_engine.solar_arc_lon(natal.jd_ut, -age if converse else age)
+        else:
+            key = "cycle"
+            arc = atacir_engine.arc_for_jds(natal.jd_ut, target_jd, cycle)
+            if converse:
+                arc = -arc
         self.atacir_arc = arc
         self.atacir_cycle = cycle
         self.atacir_converse = converse
+        self.atacir_key = key
 
         ap = atacir_engine.rotate(natal.planets_degree_ut, arc)
         ah = atacir_engine.rotate(natal.houses_degree_ut, arc)
@@ -1619,8 +1628,9 @@ class openAstroInstance:
         self.biwheel_single = "Atacir"
         self.type = "Transit"
         direction = _(", converse") if converse else ""
-        openAstro.charttype="%s C-%d (%s-%02d-%02d, %s%s)" % (
-            _("Atacir"), cycle, dt.year, dt.month, dt.day,
+        rate = _("solar arc") if key == "solar_arc" else "C-%d" % (cycle,)
+        openAstro.charttype="%s %s (%s-%02d-%02d, %s%s)" % (
+            _("Atacir"), rate, dt.year, dt.month, dt.day,
             self.dec2deg(atacir_engine.normalize(arc)), direction)
         openAstro.transit=True
         return
@@ -4738,6 +4748,29 @@ class mainWindow:
         show_rate()
         table.attach(hbox,0,1,2,3, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
+        #rate: the constant 360/N, or the progressed Sun's own travel.
+        #Both turn the chart rigidly; only the source of the arc differs.
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Rate')+": "), False, False, 0)
+        self.atacir_key_list = ["cycle", "solar_arc"]
+        entry['K']=Gtk.ComboBoxText()
+        entry['K'].append_text(_("Cycle (constant)"))
+        entry['K'].append_text(_("Solar arc (progressed Sun)"))
+        entry['K'].set_active(1 if last('atacir_key', 'cycle') == 'solar_arc' else 0)
+        hbox.pack_start(entry['K'], False, False, 0)
+        table.attach(hbox,0,1,3,4, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        def sync_rate(*_a):
+            #the cycle means nothing when the Sun supplies the arc
+            on = entry['K'].get_active() == 0
+            entry['C'].set_sensitive(on)
+            rate.set_sensitive(on)
+            if on:
+                show_rate()
+            else:
+                rate.set_text("  %s" % (_("about 1° a year, from the ephemeris"),))
+        entry['K'].connect("changed", sync_rate)
+
         #direct or converse
         hbox = Gtk.HBox(spacing=4)
         hbox.pack_start(Gtk.Label(label=_('Direction')+": "), False, False, 0)
@@ -4746,11 +4779,12 @@ class mainWindow:
         entry['R'].append_text(_("Converse"))
         entry['R'].set_active(1 if last('atacir_dir', '0') == '1' else 0)
         hbox.pack_start(entry['R'], False, False, 0)
-        table.attach(hbox,0,1,3,4, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+        table.attach(hbox,0,1,4,5, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
         button = Gtk.Button(label=_("Submit"))
         button.connect("clicked", self.specialAtacirSubmit, entry)
-        table.attach(button,0,1,4,5, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+        table.attach(button,0,1,5,6, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+        sync_rate()
 
         self.win_SAT.vbox.pack_start(table, True, True, 0)
         self.win_SAT.show_all()
@@ -4760,13 +4794,15 @@ class mainWindow:
         dt = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()))
         cycle = atacir_engine.valid_cycle(entry['C'].get_value_as_int())
         converse = entry['R'].get_active() == 1
+        key = self.atacir_key_list[entry['K'].get_active()]
         #remember last used parameters in astrocfg for the next run
         db.setAstrocfg('atacir_Y', entry['Y'].get_text())
         db.setAstrocfg('atacir_M', entry['M'].get_text())
         db.setAstrocfg('atacir_D', entry['D'].get_text())
         db.setAstrocfg('atacir_cycle', str(cycle))
         db.setAstrocfg('atacir_dir', '1' if converse else '0')
-        openAstro.localToAtacir(dt, cycle, converse)
+        db.setAstrocfg('atacir_key', key)
+        openAstro.localToAtacir(dt, cycle, converse, key)
         self.win_SAT.destroy()
         #a fresh atacir chart defaults to the bi-wheel view
         self._resetChartViewBoth()

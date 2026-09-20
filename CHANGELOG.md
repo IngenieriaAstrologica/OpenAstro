@@ -2,6 +2,41 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: solar-arc directions — 2026-09-20
+
+### Change
+The Atacir dialog gains a **Rate** selector: the constant 360/N of a cycle,
+or the **solar arc** taken from the progressed Sun. Both turn the chart
+rigidly; only the source of the arc differs, so this is one more reading of
+the engine already there rather than a second chart type. The cycle field
+greys out when the Sun supplies the arc, because it then means nothing.
+
+With this, the roadmap's §2 is covered: the 1°-a-year symbolic directions
+*are* the atacir C-360, already available, and the solar arc is what was
+missing.
+
+### How it works
+`primary.solar_arc_lon()`, alongside the existing `solar_arc_ra()`. One
+ephemeris day per year of life, and the arc is the progressed Sun's travel
+in **ecliptic longitude** — where the older function measures the same
+travel in right ascension for the primary directions. Signed, so a
+converse chart just passes a negative age.
+
+### Verification
+Measured on a real chart: 0° at birth, 0.9819°/year at one year, 0.9745 at
+thirty, 0.9698 at fifty — the slow drift of the real Sun, bracketing
+Naibod's constant 0.98565 within 0.011. Monotonic to a hundred years,
+negative for converse.
+
+The two arcs it must not be confused with, both checked to differ: the
+right-ascension arc gives 28.2486° where longitude gives 29.2336° at the
+same age, and the C-360 cycle gives exactly 30.0000° because it is a
+constant, not an ephemeris.
+
+### Files changed
+- `openastromod/primary.py` — `solar_arc_lon()`
+- `openastro` — `localToAtacir` key, Rate selector in `specialAtacir`
+
 ## Feature: Arabic Parts table — 2026-09-20
 
 ### Change
