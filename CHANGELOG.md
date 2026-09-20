@@ -2,6 +2,54 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: Arabic Parts table — 2026-09-20
+
+### Change
+New **Tables → Arabic Parts**: sixteen lots with their position, the house
+they fall in, and the formula as resolved for the chart's sect. Lots that
+reverse at night are marked, so the table shows what was actually computed
+rather than a textbook formula that may not apply.
+
+This extends what the chart already had — Fortune, Spirit, marriage and
+Infortune as fixed entries in `swiss.py` — into a catalogue.
+
+### How it works
+`openastromod/arabicparts.py`. Every lot has the same shape, `A + B - C`,
+with B and C trading places for a nocturnal nativity. Terms name one of
+four things, so a formula can reach anything in the chart:
+
+    ('cusp', n)     the n-th house cusp
+    ('planet', i)   a body, by OpenAstro's index
+    ('lot', name)   a lot computed earlier, so lots build on lots
+    ('lord', n)     the domicile ruler of the sign on the n-th cusp
+
+The domicile table is Morinus' `doms`, and its implied planet order — Sun,
+Moon, Mercury, Venus, Mars, Jupiter, Saturn — turns out to be exactly
+OpenAstro's indices 0-6, verified sign by sign, so no translation layer is
+needed. The catalogue is ordered so Fortune and Spirit are resolved before
+the lots measured from them, and a formula that cannot be resolved is
+skipped rather than silently placed at 0°.
+
+### Verification
+Fortune and Spirit match the values `swiss.py` already computes at indices
+27 and 28 **to the last digit, in both a diurnal and a nocturnal chart** —
+the new engine agrees with the code in production. Also checked: the two
+are mirror images about the Ascendant, the night reversal swaps them
+exactly, `lord(n)` resolves through the domicile table, and an unresolvable
+formula drops out instead of defaulting.
+
+Rendered outside GTK against the real template before committing: 16 rows,
+514px, everything inside its box.
+
+### Not included
+Lots whose formula circulates in more than one version depending on the
+source. Including them would mean picking a side silently; the catalogue
+holds only what is attested without variants.
+
+### Files changed
+- `openastromod/arabicparts.py` — new engine module
+- `openastro` — `tableArabicParts`, Tables menu entry, print dispatch
+
 ## Feature: Midpoints table — 2026-09-20
 
 ### Change

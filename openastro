@@ -53,7 +53,7 @@ from gi.repository import Gtk, Gdk, GLib, GObject, Rsvg, cairo
 #internal openastro modules
 sys.path.append("/usr/lib/python3.5/dist-packages") #trying to 'fix' some problems importing openastromod on some distros
 sys.path.append("/usr/lib/python3.5/site-packages") #trying to 'fix' some problems importing openastromod on some distros
-from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine
+from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine
 
 def _rsvg_render(handle, cr):
     """Render a whole SVG handle at its natural size onto a Cairo context,
@@ -3865,6 +3865,7 @@ class mainWindow:
         tables_menu.append(mi(_('Fixed Stars'), self.tableFixedStars, 'FixedStars'))
         tables_menu.append(mi(_('Firdaria'), self.tableFirdaria, 'Firdaria'))
         tables_menu.append(mi(_('Midpoints'), self.tableMidpoints, 'Midpoints'))
+        tables_menu.append(mi(_('Arabic Parts'), self.tableArabicParts, 'ArabicParts'))
         menubar.append(tables_top)
 
         #Zoom (radio)
@@ -4888,6 +4889,12 @@ class mainWindow:
             svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
             svg.set_dpi(900)
             _rsvg_render(svg, cr)
+        elif(self.tabletype == "arabicparts"):
+            self.tableArabicParts(None,printing)
+            #draw svg for printing
+            svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
+            svg.set_dpi(900)
+            _rsvg_render(svg, cr)
         elif(self.tabletype == "midpoints"):
             self.tableMidpoints(None,printing)
             #draw svg for printing
@@ -5410,6 +5417,152 @@ class mainWindow:
             self.win_TCA.show_all()     
         return
         
+    def tableArabicParts(self, widget, printing=None):
+        #Arabic parts (Morinus arabicparts.py): every lot of the catalogue
+        #with its position, the house it falls in and the formula as
+        #resolved for this chart's sect.
+        self.tabletype="arabicparts"
+
+        def fmt_lon(lon_ut):
+            lon = float(lon_ut) % 360.0
+            sign = int(lon // 30.0) % 12
+            in_sign = lon - int(lon // 30.0) * 30.0
+            d = int(in_sign)
+            m = int((in_sign - d) * 60.0)
+            s = int(round((((in_sign - d) * 60.0) - m) * 60.0))
+            if s == 60:
+                s = 0
+                m += 1
+            if m == 60:
+                m = 0
+                d += 1
+                if d == 30:
+                    d = 0
+                    sign = (sign + 1) % 12
+            return "%02d\xb0%02d'%02d\" %s" % (d, m, s, openAstro.zodiac_short[sign])
+
+        cusps = list(openAstro.houses_degree_ut)
+
+        def house_of(lon):
+            #the house whose cusp the longitude follows
+            for h in range(12):
+                a = cusps[h] % 360.0
+                b = cusps[(h + 1) % 12] % 360.0
+                span = (b - a) % 360.0
+                if (lon - a) % 360.0 < span:
+                    return h + 1
+            return 1
+
+        def term_text(term):
+            kind, value = term
+            if kind == 'cusp':
+                return _("Asc") if value == 1 else "%s %d" % (_("cusp"), value)
+            if kind == 'planet':
+                try:
+                    return openAstro.planets[value]['label']
+                except (IndexError, KeyError):
+                    return str(value)
+            if kind == 'lot':
+                return value.replace('_', ' ').title()
+            if kind == 'lord':
+                return "%s %d" % (_("lord of"), value)
+            return str(term)
+
+        sun = openAstro.planets_degree_ut[0]
+        asc = openAstro.houses_degree_ut[0]
+        day_chart = (sun - asc) % 360.0 >= 180.0
+        rows = arabicparts_engine.compute(cusps, openAstro.planets_degree_ut, day_chart)
+
+        ROW_H = 24
+        textstyle = "font-size: 11px; fill: %s" % (openAstro.colors['paper_0'],)
+        smallstyle = "font-size: 9px; fill: %s" % (openAstro.colors['paper_0'],)
+        headerstyle = "font-size: 12px; font-weight: bold; fill: %s" % (openAstro.colors['paper_0'],)
+        gridstyle = 'stroke:%s; stroke-width: 1px; stroke-opacity:.6; fill:none' % (openAstro.colors['paper_0'],)
+
+        out = '<g transform="translate(40,60)">'
+        out += '<text x="0" y="0" style="%s">%s: %s  —  %d %s</text>\n' % (
+            headerstyle, _("Sect"), _("diurnal") if day_chart else _("nocturnal"),
+            len(rows), _("lots"))
+        for cx, text in ((0, _("Lot")), (180, _("Position")), (310, _("House")),
+                         (370, _("Formula"))):
+            out += '<text x="%s" y="24" style="%s">%s</text>\n' % (cx, headerstyle, text)
+
+        y = 30
+        for r in rows:
+            y += ROW_H
+            out += '<rect x="-15" y="%s" width="740" height="%s" style="%s"/>\n' % (y - 15, ROW_H - 4, gridstyle)
+            out += '<text x="0" y="%s" style="%s">%s</text>\n' % (y, textstyle, r['label'])
+            out += '<text x="180" y="%s" style="%s">%s</text>\n' % (y, textstyle, fmt_lon(r['lon']))
+            out += '<text x="310" y="%s" style="%s">%d</text>\n' % (y, textstyle, house_of(r['lon']))
+            a, b, c = r['terms']
+            mark = " *" if r['reversed'] else ""
+            out += '<text x="370" y="%s" style="%s">%s + %s &#8722; %s%s</text>\n' % (
+                y, smallstyle, term_text(a), term_text(b), term_text(c), mark)
+        out += '<text x="370" y="%s" style="%s">%s</text>\n' % (
+            y + 26, smallstyle, _("* reversed for a nocturnal chart"))
+        out += "</g>"
+
+        td = {}
+        td['paper_color_0']=openAstro.colors["paper_0"]
+        td['paper_color_1']=openAstro.colors["paper_1"]
+        for i in range(len(openAstro.planets)):
+            td['planets_color_%s'%(i)]=openAstro.colors["planet_%s"%(i)]
+        for i in range(12):
+            td['zodiac_color_%s'%(i)]=openAstro.colors["zodiac_icon_%s" %(i)]
+        for i in range(len(openAstro.aspects)):
+            td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
+        td['stringTitle'] = "Arabic Parts for %s"%(openAstro.name)
+
+        pages=1
+        pagesY = (1188 * pages)+10
+        if printing:
+            td['svgWidth'] = printing['width']
+            td['svgHeight'] = printing['height']
+            td['viewbox'] = "0 %s 840 1188" %( printing['pagenum']*(1188+10) )
+        else:
+            td['svgWidth'] = 1050
+            td['svgHeight'] = (td['svgWidth']/840.0)* pagesY
+            td['viewbox'] = "0 0 840 %s" %( pagesY )
+
+        td['data'] = out
+        td['pagesRect'] = '<rect x="0" y="0" width="840" height="1188" style="fill: %s;" />' % (openAstro.colors['paper_1'],)
+
+        f=open(cfg.xml_svg_table)
+        template=Template(f.read()).substitute(td)
+        f.close()
+        if printing:
+            f=open(cfg.tempfilenametableprint,"w")
+        else:
+            f=open(cfg.tempfilenametable,"w")
+        f.write(template)
+        f.close()
+
+        if printing == None:
+            self.win_TAP = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+            self.win_TAP.connect("destroy", lambda w: self.win_TAP.destroy())
+            self.win_TAP.set_title("OpenAstro.org Arabic Parts")
+            self.win_TAP.set_icon_from_file(cfg.iconWindow)
+            self.win_TAP.set_size_request(td['svgWidth']+30, 700)
+            self.win_TAP.move(50,50)
+            vbox = Gtk.VBox()
+            hbox = Gtk.HBox()
+            button = Gtk.Button(label=_('Print'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=False,window=self.win_TAP,name="arabic-parts-%s.pdf"%(openAstro.name)))
+            hbox.pack_start(button,False,False,0)
+            button = Gtk.Button(label=_('Save as PDF'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=True,window=self.win_TAP,name="arabic-parts-%s.pdf"%(openAstro.name)))
+            hbox.pack_start(button,False,False,0)
+            vbox.pack_start(hbox,False,False,0)
+            draw = drawSVG()
+            draw.setSVG(cfg.tempfilenametable)
+            scrolledwindow = Gtk.ScrolledWindow()
+            scrolledwindow.add(draw)
+            scrolledwindow.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            vbox.pack_start(scrolledwindow,True,True,0)
+            self.win_TAP.add(vbox)
+            self.win_TAP.show_all()
+        return
+
     def tableMidpoints(self, widget, printing=None):
         #Midpoints (Morinus midpoints.py) read in the 90-degree dial: only
         #pairs that some other body actually sits on are listed, since a
