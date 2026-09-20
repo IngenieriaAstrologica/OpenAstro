@@ -1438,14 +1438,22 @@ class openAstroInstance:
         openAstro.transit=True
         return
 
-    def localToLunar(self, year, month):
+    def localToLunar(self, year, month, day=None):
         #tropical month in seconds (Moon back to its natal longitude)
         lunarmonthsecs = 27.321661 * 86400.0
-        dprint("localToLunar: from %s-%s-%s to %s-%02d" % (self.year,self.month,self.day,year,month))
+        #Seed day: the one asked for, or mid-month when none is given.
+        #The search below converges to the return NEAREST the seed, because
+        #the correction is normalised to (-180, 180] and so always takes the
+        #shorter way round. Returns recur every ~27.3 days, so any date has
+        #exactly one near it and the answer is unambiguous.
+        if day is None:
+            day = 15
+        else:
+            #a day the month does not have would raise; clamp instead
+            day = max(1, min(int(day), calendar.monthrange(year, month)[1]))
+        dprint("localToLunar: from %s-%s-%s to %s-%02d-%02d" % (self.year,self.month,self.day,year,month,day))
         h,m,s = self.decHour(self.hour)
-        #start mid-month at natal hour: converges to the return nearest
-        #mid-month (returns recur every ~27.3 days, so exactly one is near)
-        dt_new = datetime.datetime(year, month, 15, h, m, s)
+        dt_new = datetime.datetime(year, month, day, h, m, s)
         mdata = ephemeris.ephData(dt_new.year,dt_new.month,dt_new.day,self.decHourJoin(dt_new.hour,dt_new.minute,dt_new.second),self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
         #NOTE: geocentric Moon, never topocentric: lunar parallax reaches
         #almost a degree and would eat any tight orb (measured doctrine).
@@ -4343,19 +4351,19 @@ class mainWindow:
         # create a new window
         self.win_SL = Gtk.Dialog()
         self.win_SL.set_icon_from_file(cfg.iconWindow)
-        self.win_SL.set_title(_("Select month for Lunar Return"))
+        self.win_SL.set_title(_("Select date for Lunar Return"))
         self.win_SL.connect("delete_event", lambda w,e: self.win_SL.destroy())
         self.win_SL.move(150,150)
         self.win_SL.set_border_width(5)
-        self.win_SL.set_size_request(340,140)
+        self.win_SL.set_size_request(380,150)
 
         #create a table
-        table = Gtk.Table(n_rows=2, n_columns=2, homogeneous=False)
+        table = Gtk.Table(n_rows=2, n_columns=3, homogeneous=False)
         table.set_border_width(10)
 
-        #options (last used month remembered in astrocfg)
+        #options (last used date remembered in astrocfg)
         now = datetime.datetime.now()
-        table.attach(Gtk.Label(label=_("Select month for Lunar Return")), 0, 2, 0, 1, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
+        table.attach(Gtk.Label(label=_("Nearest Lunar Return to this date")+":"), 0, 3, 0, 1, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
         entry={}
         def last(key, default):
             val = db.getAstrocfg(key)
@@ -4370,6 +4378,11 @@ class mainWindow:
         entry['M'].set_width_chars(2)
         entry['M'].set_text(last('lunar_M', '%02d'%(now.month)))
         table.attach(entry['M'], 1, 2, 1, 2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
+        entry['D']=Gtk.Entry()
+        entry['D'].set_max_length(2)
+        entry['D'].set_width_chars(2)
+        entry['D'].set_text(last('lunar_D', '%02d'%(now.day)))
+        table.attach(entry['D'], 2, 3, 1, 2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
 
         #make the ui layout with ok button
         self.win_SL.vbox.pack_start(table, True, True, 0)
@@ -4390,11 +4403,19 @@ class mainWindow:
         return
 
     def specialLunarSubmit(self, widget, entry):
-        intyear = int(entry['Y'].get_text())
-        intmonth = int(entry['M'].get_text())
+        #bad input keeps the dialog open instead of raising behind it
+        try:
+            intyear = int(entry['Y'].get_text())
+            intmonth = int(entry['M'].get_text())
+            intday = int(entry['D'].get_text())
+        except ValueError:
+            return
+        if not (1 <= intmonth <= 12) or not (1 <= intday <= 31):
+            return
         db.setAstrocfg('lunar_Y', entry['Y'].get_text())
         db.setAstrocfg('lunar_M', entry['M'].get_text())
-        openAstro.localToLunar(intyear, intmonth)
+        db.setAstrocfg('lunar_D', entry['D'].get_text())
+        openAstro.localToLunar(intyear, intmonth, intday)
         self.win_SL.destroy()
         #a fresh lunar return defaults to the bi-wheel view
         self._resetChartViewBoth()
