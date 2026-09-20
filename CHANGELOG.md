@@ -2,6 +2,49 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: Midpoints table — 2026-09-20
+
+### Change
+New **Tables → Midpoints**: every pair of visible bodies, its midpoint,
+and the bodies sitting on it. Pairs nobody occupies are left out — a
+midpoint with nothing on it says nothing — and the rest are sorted by
+tightest contact. Orb defaults to 1.5° and can be set through
+`midpoints_orb` in `astrocfg`.
+
+### How it works
+`openastromod/midpoints.py`, pure geometry. The midpoint is the near one,
+inside the shorter of the two arcs joining the bodies, as Morinus computes
+it.
+
+Contacts are tested in the **90-degree dial**: reducing every longitude
+modulo 90 collapses conjunction, square and opposition onto one point, so a
+single proximity test finds all three — which is the whole reason the dial
+exists, since those three angles all put a body on the midpoint's axis. The
+dial wraps, so 89° and 1° are two degrees apart, not eighty-eight.
+
+A pair's own members are excluded from its contacts: a body is trivially on
+the axis of any midpoint it helps define.
+
+### Verification
+The midpoint matches a literal transcription of Morinus' `countMidPoints`
+over a 14,400-point grid plus 3,000 random pairs — **worst difference
+0.0**. Geometric properties checked independently on 5,000 random pairs:
+the midpoint is equidistant from both bodies and lies in the shorter arc.
+The dial registers 0°, 90°, 180° and 270° as contacts and rejects a trine.
+
+Simulated on a real chart (13 bodies, 78 pairs): 22 activated pairs at the
+default orb, 554px of table, and 43 even at orb 3° — all within the page.
+
+### Not included
+Morinus' second method, the midpoint **with latitude** after Ruediger
+Plantiko — the true midpoint of the great circle joining the bodies rather
+than of their ecliptic projections. It is a different quantity rather than
+a refinement, and nothing else in OpenAstro works in that space.
+
+### Files changed
+- `openastromod/midpoints.py` — new engine module
+- `openastro` — `tableMidpoints`, Tables menu entry, print dispatch
+
 ## Fix: Monthly Timeline gains Save as CSV — 2026-09-19
 
 The Timeline window had Print and Save as PDF only. A **Save as CSV**
