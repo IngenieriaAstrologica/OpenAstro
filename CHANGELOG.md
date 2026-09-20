@@ -2,6 +2,45 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: Profections table — 2026-09-20
+
+### Change
+New **Tables → Profections**: ninety-one years, each with the sign the
+Ascendant has profected to, the house it puts first, the lord of that sign
+and where that lord stands natally. The year being lived now is shaded, so
+the table answers "who rules this year" at a glance. It paginates.
+
+### How it works
+`openastromod/profections.py` computes nothing astronomical. Profecting
+*is* the atacir of cycle 12 seen another way: that atacir turns the chart
+30° a year, which is exactly one sign, so at each birthday the Ascendant
+has stepped on and the first house with it. The module only names what the
+rotation lands on — which is the payoff of having built the generic engine
+first, since profections cost a lookup table rather than a second
+implementation.
+
+The domicile table is imported from `arabicparts` rather than copied, so
+the lots and the time lords can never disagree about who rules a sign.
+
+### Verification
+The load-bearing check: for each of the first forty years, the sign this
+module reports is compared against the Ascendant **actually rotated by the
+atacir C-12 arc** for that age — **zero discrepancies**. The two are the
+same technique, and now demonstrably so.
+
+Also: the sign advances exactly one per year and returns to the natal sign
+at 12 and at 84; ages 0, 11 and 12 give houses 1, 12 and 1; every lord
+matches the shared domicile table; the years chain with no gaps, each
+opening on the birthday; a 29 February birth does not raise; and
+`current_age` handles the day before a birthday and dates before birth.
+
+Rendered outside GTK before committing: 91 rows over 2 pages, headers
+repeated, page break clean.
+
+### Files changed
+- `openastromod/profections.py` — new engine module
+- `openastro` — `tableProfections`, Tables menu entry, print dispatch
+
 ## Feature: solar-arc directions — 2026-09-20
 
 ### Change

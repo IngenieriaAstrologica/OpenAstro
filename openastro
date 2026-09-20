@@ -53,7 +53,7 @@ from gi.repository import Gtk, Gdk, GLib, GObject, Rsvg, cairo
 #internal openastro modules
 sys.path.append("/usr/lib/python3.5/dist-packages") #trying to 'fix' some problems importing openastromod on some distros
 sys.path.append("/usr/lib/python3.5/site-packages") #trying to 'fix' some problems importing openastromod on some distros
-from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine
+from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine
 
 def _rsvg_render(handle, cr):
     """Render a whole SVG handle at its natural size onto a Cairo context,
@@ -3876,6 +3876,7 @@ class mainWindow:
         tables_menu.append(mi(_('Firdaria'), self.tableFirdaria, 'Firdaria'))
         tables_menu.append(mi(_('Midpoints'), self.tableMidpoints, 'Midpoints'))
         tables_menu.append(mi(_('Arabic Parts'), self.tableArabicParts, 'ArabicParts'))
+        tables_menu.append(mi(_('Profections'), self.tableProfections, 'Profections'))
         menubar.append(tables_top)
 
         #Zoom (radio)
@@ -4925,6 +4926,12 @@ class mainWindow:
             svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
             svg.set_dpi(900)
             _rsvg_render(svg, cr)
+        elif(self.tabletype == "profections"):
+            self.tableProfections(None,printing)
+            #draw svg for printing
+            svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
+            svg.set_dpi(900)
+            _rsvg_render(svg, cr)
         elif(self.tabletype == "arabicparts"):
             self.tableArabicParts(None,printing)
             #draw svg for printing
@@ -5453,6 +5460,165 @@ class mainWindow:
             self.win_TCA.show_all()     
         return
         
+    def tableProfections(self, widget, printing=None):
+        #Annual profections: the atacir C-12 named year by year. The sign
+        #the Ascendant has profected to, the house it puts first, and the
+        #lord of that sign, with where that lord stands natally.
+        self.tabletype="profections"
+
+        def fmt_lon(lon_ut):
+            lon = float(lon_ut) % 360.0
+            sign = int(lon // 30.0) % 12
+            in_sign = lon - int(lon // 30.0) * 30.0
+            d = int(in_sign)
+            m = int((in_sign - d) * 60.0)
+            if m == 60:
+                m = 0
+                d += 1
+                if d == 30:
+                    d = 0
+                    sign = (sign + 1) % 12
+            return "%02d\xb0%02d' %s" % (d, m, openAstro.zodiac_short[sign])
+
+        cusps = list(openAstro.houses_degree_ut)
+
+        def house_of(lon):
+            for h in range(12):
+                a = cusps[h] % 360.0
+                span = (cusps[(h + 1) % 12] % 360.0 - a) % 360.0
+                if (lon - a) % 360.0 < span:
+                    return h + 1
+            return 1
+
+        def label(i):
+            try:
+                return openAstro.planets[i]['label']
+            except (IndexError, KeyError):
+                return str(i)
+
+        birth = datetime.datetime(openAstro.year, openAstro.month, openAstro.day)
+        rows = profections_engine.table(birth, cusps[0], upto=90)
+        now_age = profections_engine.current_age(birth, datetime.datetime.now())
+
+        ROW_H = 22
+        PAGE_H = 1188.0
+        PAGE_GAP = 10.0
+        TOP = 60.0
+        BOTTOM_MARGIN = 24.0
+        textstyle = "font-size: 11px; fill: %s" % (openAstro.colors['paper_0'],)
+        headerstyle = "font-size: 12px; font-weight: bold; fill: %s" % (openAstro.colors['paper_0'],)
+        gridstyle = 'stroke:%s; stroke-width: 1px; stroke-opacity:.6; fill:none' % (openAstro.colors['paper_0'],)
+        COLS = ((0, _("Age")), (50, _("From")), (160, _("To")), (270, _("Sign")),
+                (330, _("House")), (390, _("Lord")), (500, _("Lord natally")))
+
+        def page_top(p):
+            return p * (PAGE_H + PAGE_GAP) - TOP + 40.0
+
+        def page_limit(p):
+            return p * (PAGE_H + PAGE_GAP) + PAGE_H - TOP - BOTTOM_MARGIN
+
+        def headers(y):
+            h = ''
+            for cx, text in COLS:
+                h += '<text x="%s" y="%s" style="%s">%s</text>\n' % (cx, y, headerstyle, text)
+            return h
+
+        out = '<g transform="translate(40,%d)">' % (int(TOP),)
+        page = 0
+        y = page_top(page)
+        out += '<text x="0" y="%s" style="%s">%s %s</text>\n' % (
+            y - 24, headerstyle, _("Profections from"), birth.strftime('%Y-%m-%d'))
+        out += headers(y)
+        for r in rows:
+            y += ROW_H
+            if y > page_limit(page):
+                page += 1
+                y = page_top(page)
+                out += headers(y)
+                y += ROW_H
+            #the year being lived now gets a filled row
+            if now_age is not None and r['age'] == now_age:
+                out += '<rect x="-15" y="%s" width="740" height="%s" style="fill: %s; fill-opacity: 0.12;"/>\n' % (
+                    y - 15, ROW_H - 4, openAstro.colors['paper_0'])
+            out += '<rect x="-15" y="%s" width="740" height="%s" style="%s"/>\n' % (y - 15, ROW_H - 4, gridstyle)
+            out += '<text x="0" y="%s" style="%s">%d</text>\n' % (y, textstyle, r['age'])
+            out += '<text x="50" y="%s" style="%s">%s</text>\n' % (y, textstyle, r['start'].strftime('%Y-%m-%d'))
+            out += '<text x="160" y="%s" style="%s">%s</text>\n' % (
+                y, textstyle, (r['end'] - datetime.timedelta(days=1)).strftime('%Y-%m-%d'))
+            out += '<text x="270" y="%s" style="font-size: 11px; fill: %s">%s</text>\n' % (
+                y, openAstro.colors["zodiac_icon_%s" % (r['sign'],)], openAstro.zodiac_short[r['sign']])
+            out += '<text x="330" y="%s" style="%s">%d</text>\n' % (y, textstyle, r['house'])
+            out += '<text x="390" y="%s" style="font-size: 11px; fill: %s">%s</text>\n' % (
+                y, openAstro.planet_color(r['lord']), label(r['lord']))
+            lord_lon = openAstro.planets_degree_ut[r['lord']]
+            out += '<text x="500" y="%s" style="%s">%s  (%s %d)</text>\n' % (
+                y, textstyle, fmt_lon(lord_lon), _("h."), house_of(lord_lon))
+        out += "</g>"
+        pages = page + 1
+
+        td = {}
+        td['paper_color_0']=openAstro.colors["paper_0"]
+        td['paper_color_1']=openAstro.colors["paper_1"]
+        for i in range(len(openAstro.planets)):
+            td['planets_color_%s'%(i)]=openAstro.colors["planet_%s"%(i)]
+        for i in range(12):
+            td['zodiac_color_%s'%(i)]=openAstro.colors["zodiac_icon_%s" %(i)]
+        for i in range(len(openAstro.aspects)):
+            td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
+        td['stringTitle'] = "Profections for %s"%(openAstro.name)
+
+        pagesY = (1188 * pages)+10
+        if printing:
+            td['svgWidth'] = printing['width']
+            td['svgHeight'] = printing['height']
+            td['viewbox'] = "0 %s 840 1188" %( printing['pagenum']*(1188+10) )
+        else:
+            td['svgWidth'] = 1050
+            td['svgHeight'] = (td['svgWidth']/840.0)* pagesY
+            td['viewbox'] = "0 0 840 %s" %( pagesY )
+
+        td['data'] = out
+        td['pagesRect'] = ''.join(
+            '<rect x="0" y="%s" width="840" height="1188" style="fill: %s;" />' % (
+                p * (1188 + 10), openAstro.colors['paper_1'])
+            for p in range(pages))
+
+        f=open(cfg.xml_svg_table)
+        template=Template(f.read()).substitute(td)
+        f.close()
+        if printing:
+            f=open(cfg.tempfilenametableprint,"w")
+        else:
+            f=open(cfg.tempfilenametable,"w")
+        f.write(template)
+        f.close()
+
+        if printing == None:
+            self.win_TPR = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+            self.win_TPR.connect("destroy", lambda w: self.win_TPR.destroy())
+            self.win_TPR.set_title("OpenAstro.org Profections")
+            self.win_TPR.set_icon_from_file(cfg.iconWindow)
+            self.win_TPR.set_size_request(td['svgWidth']+30, 700)
+            self.win_TPR.move(50,50)
+            vbox = Gtk.VBox()
+            hbox = Gtk.HBox()
+            button = Gtk.Button(label=_('Print'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=False,window=self.win_TPR,name="profections-%s.pdf"%(openAstro.name)))
+            hbox.pack_start(button,False,False,0)
+            button = Gtk.Button(label=_('Save as PDF'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=True,window=self.win_TPR,name="profections-%s.pdf"%(openAstro.name)))
+            hbox.pack_start(button,False,False,0)
+            vbox.pack_start(hbox,False,False,0)
+            draw = drawSVG()
+            draw.setSVG(cfg.tempfilenametable)
+            scrolledwindow = Gtk.ScrolledWindow()
+            scrolledwindow.add(draw)
+            scrolledwindow.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            vbox.pack_start(scrolledwindow,True,True,0)
+            self.win_TPR.add(vbox)
+            self.win_TPR.show_all()
+        return
+
     def tableArabicParts(self, widget, printing=None):
         #Arabic parts (Morinus arabicparts.py): every lot of the catalogue
         #with its position, the house it falls in and the formula as
