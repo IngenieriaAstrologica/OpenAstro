@@ -5438,6 +5438,14 @@ class mainWindow:
             datetime.datetime(openAstro.year, openAstro.month, openAstro.day),
             day_chart, bonatti)
 
+        #Layout. Each row stacks two lines in the sub-period columns, so it
+        #needs room for both; 20px only fitted one and the dates spilled into
+        #the row below. The seven sub-periods run from SUB_X0 to the right
+        #edge of the box (725): 7 x 43 = 301, and a full date at 7px is about
+        #34px wide, so the columns clear each other.
+        ROW_H = 30
+        SUB_X0 = 420
+        SUB_STEP = 43
         textstyle = "font-size: 11px; fill: %s" % (openAstro.colors['paper_0'],)
         substyle = "font-size: 9px; fill: %s" % (openAstro.colors['paper_0'],)
         headerstyle = "font-size: 12px; font-weight: bold; fill: %s" % (openAstro.colors['paper_0'],)
@@ -5452,12 +5460,15 @@ class mainWindow:
         out += '<text x="150" y="24" style="%s">%s</text>\n' % (headerstyle, _("From"))
         out += '<text x="260" y="24" style="%s">%s</text>\n' % (headerstyle, _("To"))
         out += '<text x="370" y="24" style="%s">%s</text>\n' % (headerstyle, _("Years"))
-        out += '<text x="440" y="24" style="%s">%s</text>\n' % (headerstyle, _("Sub-periods"))
+        out += '<text x="%s" y="24" style="%s">%s</text>\n' % (SUB_X0, headerstyle, _("Sub-periods"))
 
         y = 30
         for p in rows:
-            y += 20
-            out += '<rect x="-15" y="%s" width="740" height="18" style="%s"/>\n' % (y - 13, gridstyle)
+            #each row carries two lines in the sub-period columns (ruler over
+            #start date), so the box has to be tall enough for both: the box
+            #spans y-15 to y+11 and the two baselines sit at y-3 and y+7
+            y += ROW_H
+            out += '<rect x="-15" y="%s" width="740" height="%s" style="%s"/>\n' % (y - 15, ROW_H - 4, gridstyle)
             out += '<text x="0" y="%s" style="font-size: 11px; font-weight: bold; fill: %s">%s</text>\n' % (
                 y, ruler_color(p['ruler']), ruler_label(p['ruler']))
             out += '<text x="150" y="%s" style="%s">%s</text>\n' % (y, textstyle, p['start'].strftime('%Y-%m-%d'))
@@ -5466,16 +5477,16 @@ class mainWindow:
                 y, textstyle, (p['end'] - datetime.timedelta(days=1)).strftime('%Y-%m-%d'))
             out += '<text x="370" y="%s" style="%s">%s</text>\n' % (y, textstyle, p['years'])
             if p['is_node']:
-                out += '<text x="440" y="%s" style="%s">%s</text>\n' % (
-                    y, substyle, _("(the nodes take no sub-periods)"))
+                out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (
+                    SUB_X0, y, substyle, _("(the nodes take no sub-periods)"))
                 continue
-            x = 440
+            x = SUB_X0
             for (r, s_start, _s_end) in p['sub']:
-                out += '<text x="%s" y="%s" style="font-size: 9px; fill: %s">%s</text>\n' % (
-                    x, y, ruler_color(r), ruler_label(r)[:3])
+                out += '<text x="%s" y="%s" style="font-size: 8px; fill: %s">%s</text>\n' % (
+                    x, y - 3, ruler_color(r), ruler_label(r)[:3])
                 out += '<text x="%s" y="%s" style="font-size: 7px; fill: %s">%s</text>\n' % (
-                    x, y + 8, openAstro.colors['paper_0'], s_start.strftime('%y-%m-%d'))
-                x += 40
+                    x, y + 7, openAstro.colors['paper_0'], s_start.strftime('%Y-%m-%d'))
+                x += SUB_STEP
         out += "</g>"
 
         td = {}
