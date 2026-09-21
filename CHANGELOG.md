@@ -2,6 +2,53 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: import Kepler/CPA natal files — 2026-09-21
+
+### Change
+Charts can be imported from Kepler/CPA `.DAT` files, joining the skylendar,
+oroboros, astrolog32 and Zet8 importers. Astrolog32 already claims the
+`.dat` extension, so the two are told apart **by content**, not by name.
+
+### How it works
+The format is plain ISO-8859 text, one record per line, fields marked by a
+backslash tag: `\S>` the natal moment, `\A>` a second chart, `\N>` the
+name, `\L>` the place, `\D>` notes. Coordinates are decimal degrees.
+
+**The zone field is the correction to add to clock time to reach UT — the
+negated UTC offset.** Spain on CET is stored as `-1.00`. It is negated on
+import so the value reads like every other importer's.
+
+That sign was the one real unknown in the format, and it is settled by
+evidence rather than assumption: across the whole corpus the derived
+offsets track longitude, which they could only do with the sign this way
+round.
+
+| Derived offset | Records | Mean longitude | Expected |
+|----------------|---------|----------------|----------|
+| −5 | 195 | −76.9 | −75 (US Eastern) |
+| −6 | 129 | −88.1 | −90 (US Central) |
+| −8 | 55 | −119.3 | −120 (US Pacific) |
+
+**8 of 8** of the commonest offsets agree with their longitude; with the
+sign inverted only 3 of 8 would.
+
+### Verification
+Run over a corpus of 40 files: **40 read without an exception, 8,196
+records parsed**, every derived offset inside the valid −12..+14 range,
+none out of bounds. Malformed lines, missing fields and empty files are
+skipped rather than propagated.
+
+### Fix carried along
+`importZet8()` declared **17 columns and supplied 16 values** — `null`
+plus fifteen placeholders against a sixteen-value tuple, with
+`countrycode` missing. Any Zet8 import raised `OperationalError` and had
+done since the importer was written. Found because the Kepler importer
+walks the same path; fixed there.
+
+### Files changed
+- `openastromod/importfile.py` — `getKepler()` and its helpers
+- `openastro` — import menu entry, `importZet8()` column fix
+
 ## Feature: pick the day for a Lunar Return — 2026-09-20
 
 ### Change
