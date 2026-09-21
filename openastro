@@ -120,49 +120,62 @@ GRID_HOUSES_X = 610
 
 #Harmogram plotting. ARMON's own templates (the `.DHQ` files) settle the
 #layout: `QBN` is 1 in all twelve bands, so García overlays the twelve
-#curves in a single box and tells them apart by colour, dash and weight,
-#not by stacking them. `LES` carries the weight (`\AbCb:4` -> 4) and is
-#reproduced; its letters encode a dash pattern nobody has decoded, so the
-#dashes below are ours.
+#curves in a single box and tells them apart rather than stacking them.
+#His `LES` field also carries a per-harmonic line weight, which this drew
+#at one third scale until the varying thickness proved to hurt more than
+#it helped: the thin harmonics were hard to follow and the thick ones
+#buried whatever they crossed. One weight for all twelve, and the work of
+#telling them apart goes to colour and dash.
 #
 #Twelve hues spaced evenly round the colour wheel is the obvious palette
-#and the wrong one: even hue steps are not even perceptual steps, and the
-#eye separates greens from each other far worse than it separates red from
-#blue, so several pairs came out nearly identical on the plot.
+#and the wrong one: even steps in hue are not even steps in perception,
+#and the eye separates greens from each other far worse than red from
+#blue, so several pairs arrived nearly identical.
 #
-#These are picked the other way round, by Glasbey's method: walk the sRGB
-#grid and repeatedly take the colour whose CIEDE2000 distance to every
-#colour already taken is largest. White paper and black ink are seeded as
-#already-taken, so no curve can be confused with the background or the
-#text either.
+#These are picked by Glasbey's method instead -- walk the sRGB grid and
+#repeatedly take the colour whose CIEDE2000 distance to every colour
+#already taken is largest, seeding the set with the white paper and the
+#black ink so no curve can be confused with the background or the text --
+#then improved by local search, which optimises that minimum directly
+#rather than approximating it the way a greedy pass does.
 #
-#Candidates are limited to L* 28-62 and C* >= 30. The upper bound on
-#lightness is doing real work: letting it reach 72 buys a wider spread on
-#paper (23.4) but pays for it with pale curves that vanish at the 1px
-#stroke widths several harmonics carry, and a curve nobody can see is not
-#a distinguishable curve.
+#Three constraints, each earning its place:
 #
-#Dichromacy enters as a constraint rather than as the objective:
-#maximising the worst of normal/deuteranope/protanope vision would have
-#dropped the normal-vision minimum to 12.3, worse than the palette this
-#replaces. A floor of 8 on both dichromacies instead costs nothing.
+#  C* >= 55    vivid. Muted fills are what a pure distance objective
+#              reaches for, and they read as drab on a plot.
+#  L* <= 61    visible on white: this is exactly WCAG contrast 3.0, and
+#              the palette this replaces had six of twelve below that,
+#              down to 1.73. Pallor was half of why it was hard to read.
+#  hue >= 18°  Maximising distance alone piles colours into the magenta
+#              and purple region, where chroma is largest and so distances
+#              are too: numerically well spread, visibly repetitive, with
+#              no cyan and no yellow at all. The hue floor makes the
+#              palette walk the whole circle.
 #
-#   minimum CIEDE2000 between any two curves   17.6 -> 20.5
-#   ... between consecutive harmonics                  41.1
-#   ... under deuteranopia                      4.4 ->  8.1
-#   ... under protanopia                                8.2
+#   minimum CIEDE2000 between any two curves   17.6 -> 18.3
+#   ... between consecutive harmonics                  47.2
+#   ... minimum hue separation                         19°
+#   ... chroma, mean                             58 -> 66
+#   ... WCAG contrast on white, minimum        1.73 -> 3.09
+#
+#What this costs: the dichromatic floor the previous palette carried is
+#gone (deuteranopia 8.1 -> 3.6), because vivid, white-legible and
+#hue-spread cannot all hold at once with it -- the search runs out of
+#candidates at the tenth colour. The dash patterns below are what carries
+#that case now, and they cost nothing.
 #
 #The order is then permuted so consecutive harmonics are as far apart as
 #possible, since that is how they are read in the legend and the lanes.
 HARMOGRAM_CURVE_COLORS = (
-    '#c300ff', '#3c8700', '#f05a87', '#0087b4', '#e13c00', '#2d3c87',
-    '#a5874b', '#875a87', '#694b00', '#00a596', '#870f3c', '#9687e1')
+    '#e15aa5', '#78870f', '#ff4b5a', '#0096ff', '#b4870f', '#a5004b',
+    '#1e6900', '#871e00', '#c300ff', '#a55a0f', '#1e3c96', '#00a55a')
 #stroke-dasharray per harmonic, '' for solid
 HARMOGRAM_CURVE_DASHES = (
     '', '7,3', '2,3', '9,3,2,3', '4,3', '1,3',
     '12,4', '6,3,2,3', '3,2', '10,3,3,3', '5,2', '2,2,6,2')
-#Line weights, read straight off `LES` in _0MES.DHQ (harmonic 1 first).
-HARMOGRAM_CURVE_WIDTHS = (3, 6, 6, 3, 3, 3, 10, 2, 3, 2, 3, 4)
+#One weight for every curve. Heavy enough to carry its colour at a
+#glance, light enough that twelve of them crossing stay separable.
+HARMOGRAM_CURVE_WIDTH = 1.5
 
 #Fixed vertical scale. A fixed scale is the whole point -- two harmograms
 #of different dates are only comparable if the axis does not move under
@@ -7009,11 +7022,9 @@ class mainWindow:
         def polyline(top, h, n, sc=None, base=0.0, opacity=1.0):
             pts = ' '.join('%.1f,%.1f' % (x_of(jd), y_of(top, h, v, sc, base))
                            for jd, v in zip(jds, curves[n]))
-            #ARMON's weights are for a 640x350 screen; a third of them is
-            #the same visual weight on an 840pt page
             return '<polyline points="%s" style="fill:none; stroke:%s; stroke-width:%.1fpx; stroke-opacity:%.2f; %s"/>\n' % (
                 pts, HARMOGRAM_CURVE_COLORS[n-1],
-                max(0.8, HARMOGRAM_CURVE_WIDTHS[n-1] / 3.0), opacity, dasharray(n))
+                HARMOGRAM_CURVE_WIDTH, opacity, dasharray(n))
 
         def time_axis(top, h, labels=True):
             #one fine rule a day, halved until the rules can be told apart
@@ -7088,7 +7099,7 @@ class mainWindow:
             y = LEGEND_Y + (k // 6) * 16.0
             out += '<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" style="stroke:%s; stroke-width:%.1fpx; %s"/>\n' % (
                 x, y - 3, x + 22, y - 3, HARMOGRAM_CURVE_COLORS[n-1],
-                max(1.0, HARMOGRAM_CURVE_WIDTHS[n-1] / 3.0), dasharray(n))
+                HARMOGRAM_CURVE_WIDTH, dasharray(n))
             out += '<text x="%.1f" y="%.1f" style="font-size: 10px; font-weight: bold; fill: %s">H%d</text>\n' % (
                 x + 27, y, HARMOGRAM_CURVE_COLORS[n-1], n)
             out += '<text x="%.1f" y="%.1f" style="%s">%.2f</text>\n' % (
