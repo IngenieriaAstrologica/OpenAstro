@@ -2,6 +2,50 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: Harmonic Vector and Harmonic Flower engine — 2026-09-21
+
+### Change
+`openastromod/harmonicvector.py`. With the harmogram engine added earlier
+this completes the calculation side of Miguel García's harmonic suite;
+the drawings come next.
+
+### Read from the primary source
+The three techniques are defined in García's own *Suite Armónica* (1997),
+and the definitions settle what had been guesswork:
+
+- **Harmonic Vector** — "the Fourier spectrum of the sum of a Dirac delta
+  per planet". Each harmonic gets an amplitude and a phase:
+  `C(h) = Σ exp(i·h·λ)`. Boudineau's *Resultante Planetaria* is the same
+  thing at h=1.
+- **Harmonic Flower** — the concentration index per harmonic, `|C(h)|/n`,
+  drawn as petals. It answers a different question from a harmogram,
+  which is why the dominant harmonic often differs between the two: the
+  flower measures how tightly a chart gathers, the harmogram counts
+  conjunctions.
+- **Astrodines** — *not a third drawing*. García: "a function that
+  assigns a force value, some astrodines, to each point of the circle
+  representing the angular separation between two planets". They are the
+  aspect intensity function itself — the weighting the harmogram engine
+  already carries as a parameter. He reports testing "a thousand"
+  variants of it over several years.
+
+One more thing falls out: García notes that "Gouchon and Barbault's
+**cyclic index** is an example of using the harmogram of harmonic one
+[inverted] from Jupiter to Pluto". The curve added two entries ago is a
+special case of this machinery.
+
+### Verification
+The mathematics is checked at the points where the answer is forced.
+Eight conjunct planets give a concentration of exactly 1 in every
+harmonic; eight spread evenly give 0 in harmonic 1 and 1 in harmonic 8,
+where they meet again. An exact opposition cancels in harmonic 1 and
+concentrates in 2; a grand trine cancels in 1 and 2 and concentrates in 3.
+A conjunction's phase points at the conjunction. Across 2,000 random
+charts the index never left [0, 1].
+
+### Files changed
+- `openastromod/harmonicvector.py` — new engine module
+
 ## Feature: harmogram engine — 2026-09-21
 
 ### Change
