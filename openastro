@@ -4044,6 +4044,7 @@ class mainWindow:
         tables_menu.append(mi(_('Profections'), self.tableProfections, 'Profections'))
         tables_menu.append(mi(_('Cyclic Index'), self.tableCyclicIndex, 'CyclicIndex'))
         tables_menu.append(mi(_('Harmogram'), self.tableHarmogram, 'Harmogram'))
+        tables_menu.append(mi(_('Harmonic Flower'), self.tableHarmonicFlower, 'HarmonicFlower'))
         menubar.append(tables_top)
 
         #Zoom (radio)
@@ -5190,6 +5191,12 @@ class mainWindow:
             _rsvg_render(svg, cr)
         elif(self.tabletype == "harmogram"):
             self.tableHarmogramShow(printing)
+            #draw svg for printing
+            svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
+            svg.set_dpi(900)
+            _rsvg_render(svg, cr)
+        elif(self.tabletype == "harmonicflower"):
+            self.tableHarmonicFlower(None,printing)
             #draw svg for printing
             svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
             svg.set_dpi(900)
@@ -7153,6 +7160,218 @@ class mainWindow:
             vbox.pack_start(scrolledwindow,True,True,0)
             self.win_THG.add(vbox)
             self.win_THG.show_all()
+        return
+
+    def tableHarmonicFlower(self, widget, printing=None):
+        #The Harmonic Flower: the chart's Fourier spectrum drawn as twelve
+        #petals. See openastromod/harmonicvector.py -- a Dirac delta at
+        #each planet, the h-th coefficient's modulus normalised by the
+        #number of planets, which is 1 when they all share one point of the
+        #h-th harmonic circle and 0 when they cancel.
+        #
+        #Needs no dialog: unlike a harmogram it is a property of the open
+        #chart, not of a moment picked by the user.
+        self.tabletype="harmonicflower"
+        lons = [openAstro.planets_degree_ut[i]
+                for i in harmogram_engine.RADIX_INDICES]
+        petals = harmonicvector_engine.flower(lons)
+        dominant = max(petals, key=lambda p: p['concentration'])
+
+        ink = openAstro.colors['paper_0']
+        textstyle = "font-size: 11px; fill: %s" % (ink,)
+        smallstyle = "font-size: 9px; fill: %s" % (ink,)
+        captionstyle = "font-size: 10px; fill: %s" % (ink,)
+        ringstyle = 'stroke:%s; stroke-width: .5px; stroke-opacity:.3; fill:none' % (ink,)
+        spokestyle = 'stroke:%s; stroke-width: .5px; stroke-opacity:.18; fill:none' % (ink,)
+
+        #the template wraps $data in translate(20,40), so y here is page y - 40
+        CX, CY, R = 400.0, 352.0, 278.0
+        TABLE_TOP = 712.0
+        ROW_H = 26.0
+
+        def point(angle_deg, radius):
+            #harmonic 1 at the top, the rest clockwise: the angle is the
+            #harmonic's slot, not a longitude
+            a = math.radians(angle_deg)
+            return CX + radius * math.sin(a), CY - radius * math.cos(a)
+
+        def sign_of(lon):
+            lon = float(lon) % 360.0
+            sign = int(lon / 30.0)
+            rest = lon - sign * 30.0
+            d = int(rest)
+            m = int(round((rest - d) * 60.0))
+            if m == 60:
+                d, m = d + 1, 0
+            return "%02d\xb0%02d' %s" % (d, m, openAstro.zodiac_short[sign])
+
+        out = '<g>'
+        out += '<text x="0" y="14" style="%s">%s \xb7 %s \xb7 %s</text>\n' % (
+            captionstyle,
+            _("Fourier spectrum of the ten bodies as Dirac deltas, normalised 0 to 1"),
+            _("1 = all in one place in that harmonic chart"),
+            _("0 = evenly spread"))
+        beyond = [q for q in petals
+                  if q['concentration'] > harmonicvector_engine.significance_level(len(lons))]
+        out += '<text x="0" y="28" style="%s">%s: %s%d (%.3f) · %s</text>\n' % (
+            captionstyle, _("Dominant harmonic"), _("H"),
+            dominant['harmonic'], dominant['concentration'],
+            (_("past the 1-in-20 level") + ": "
+             + ", ".join("H%d" % (q['harmonic'],) for q in
+                         sorted(beyond, key=lambda q: -q['concentration'])))
+            if beyond else _("none past the 1-in-20 level"))
+
+        #--- rings, and what they are worth ---
+        quiet = min(petals, key=lambda q: q['concentration'])
+        quiet_angle = (quiet['harmonic'] - 1) * 30.0
+        for frac in (0.25, 0.5, 0.75, 1.0):
+            out += '<circle cx="%s" cy="%s" r="%.1f" style="%s"/>\n' % (
+                CX, CY, R * frac, ringstyle)
+            lx, ly = point(quiet_angle, R * frac)
+            out += '<text x="%.1f" y="%.1f" text-anchor="middle" style="%s">%.2f</text>\n' % (
+                lx, ly - 3, smallstyle, frac)
+        for p in petals:
+            x, y = point((p['harmonic'] - 1) * 30.0, R)
+            out += '<line x1="%s" y1="%s" x2="%.1f" y2="%.1f" style="%s"/>\n' % (
+                CX, CY, x, y, spokestyle)
+
+        #Two reference circles, or the dial means nothing: the index runs to
+        #1, but ten bodies dropped at random already average 0.28, and one
+        #chart in twenty reaches 0.55 by chance alone. A petal is only
+        #saying something once it is past the outer of the two.
+        chance = harmonicvector_engine.chance_level(len(lons))
+        signif = harmonicvector_engine.significance_level(len(lons))
+        for radius, dash in ((chance, '3,3'), (signif, '6,3')):
+            out += '<circle cx="%s" cy="%s" r="%.1f" style="stroke:%s; stroke-width:1px; stroke-opacity:.5; stroke-dasharray:%s; fill:none"/>\n' % (
+                CX, CY, R * radius, ink, dash)
+
+        #--- the outline through the twelve tips: the spectrum's shape ---
+        tips = []
+        for p in petals:
+            tips.append(point((p['harmonic'] - 1) * 30.0, R * p['concentration']))
+        out += '<polygon points="%s" style="fill:%s; fill-opacity:.07; stroke:%s; stroke-width:.8px; stroke-opacity:.45"/>\n' % (
+            ' '.join('%.1f,%.1f' % t for t in tips), ink, ink)
+
+        #--- the petals themselves ---
+        #each is a lens: out along its own angle, bulging to either side at
+        #half its length, in the colour the harmogram gives that harmonic
+        HALF = 12.0
+        for p in petals:
+            n = p['harmonic']
+            ang = (n - 1) * 30.0
+            length = R * p['concentration']
+            colour = HARMOGRAM_CURVE_COLORS[n-1]
+            if length > 1.0:
+                tx, ty = point(ang, length)
+                lx, ly = point(ang - HALF, length * 0.55)
+                rx, ry = point(ang + HALF, length * 0.55)
+                out += '<path d="M %s,%s Q %.1f,%.1f %.1f,%.1f Q %.1f,%.1f %s,%s Z" style="fill:%s; fill-opacity:.55; stroke:%s; stroke-width:1.2px"/>\n' % (
+                    CX, CY, lx, ly, tx, ty, rx, ry, CX, CY, colour, colour)
+            #the harmonic's number, just outside the rim
+            lx, ly = point(ang, R + 18)
+            out += '<text x="%.1f" y="%.1f" text-anchor="middle" style="font-size: 13px; font-weight: bold; fill: %s">%d</text>\n' % (
+                lx, ly + 4, colour, n)
+        out += '<circle cx="%s" cy="%s" r="2.5" style="fill:%s"/>\n' % (CX, CY, ink)
+        legend_y = CY + R + 40
+        out += '<line x1="0" y1="%s" x2="24" y2="%s" style="stroke:%s; stroke-width:1px; stroke-opacity:.5; stroke-dasharray:3,3"/>\n' % (
+            legend_y - 4, legend_y - 4, ink)
+        out += '<text x="30" y="%s" style="%s">%s (%.2f) · %s</text>\n' % (
+            legend_y, captionstyle, _("what %d bodies score by chance") % (len(lons),),
+            chance, _("an index below this says nothing"))
+        out += '<line x1="330" y1="%s" x2="354" y2="%s" style="stroke:%s; stroke-width:1px; stroke-opacity:.5; stroke-dasharray:6,3"/>\n' % (
+            legend_y - 4, legend_y - 4, ink)
+        out += '<text x="360" y="%s" style="%s">%s (%.2f)</text>\n' % (
+            legend_y, captionstyle, _("reached by one chart in twenty"), signif)
+
+        #--- the same twelve as numbers ---
+        head = TABLE_TOP - 10
+        out += '<text x="0" y="%s" style="%s">%s</text>\n' % (head, textstyle, _("Harmonic"))
+        out += '<text x="70" y="%s" style="%s">%s</text>\n' % (head, textstyle, _("Index"))
+        out += '<text x="130" y="%s" style="%s">%s</text>\n' % (head, textstyle, _("Amplitude"))
+        out += '<text x="215" y="%s" style="%s">%s</text>\n' % (head, textstyle, _("Points to"))
+        out += '<text x="330" y="%s" style="%s">%s</text>\n' % (head, textstyle, _("Concentration"))
+        out += '<line x1="-15" y1="%s" x2="790" y2="%s" style="stroke:%s; stroke-width:1px; stroke-opacity:.5"/>\n' % (
+            head + 6, head + 6, ink)
+        #strongest first, so the reading order is the finding
+        for k, p in enumerate(sorted(petals, key=lambda q: -q['concentration'])):
+            n = p['harmonic']
+            y = TABLE_TOP + 16 + k * ROW_H
+            colour = HARMOGRAM_CURVE_COLORS[n-1]
+            out += '<text x="0" y="%.1f" style="font-size: 12px; font-weight: bold; fill: %s">H%d</text>\n' % (
+                y, colour, n)
+            out += '<text x="70" y="%.1f" style="%s">%.3f</text>\n' % (y, textstyle, p['concentration'])
+            out += '<text x="130" y="%.1f" style="%s">%.3f</text>\n' % (y, textstyle, p['amplitude'])
+            #one of the h preimages of the phase; the others sit 360/h apart
+            out += '<text x="215" y="%.1f" style="%s">%s</text>\n' % (y, textstyle, sign_of(p['phase']))
+            out += '<rect x="330" y="%.1f" width="%.1f" height="9" style="fill:%s; fill-opacity:.7"/>\n' % (
+                y - 8, 420.0 * p['concentration'], colour)
+        note = TABLE_TOP + 16 + 12 * ROW_H + 18
+        out += '<text x="0" y="%.1f" style="%s">%s</text>\n' % (
+            note, captionstyle,
+            _("\"Points to\" is one of the h places the concentration falls on; the others lie 360/h apart."))
+        out += '</g>'
+
+        td = {}
+        td['paper_color_0']=openAstro.colors["paper_0"]
+        td['paper_color_1']=openAstro.colors["paper_1"]
+        for i in range(len(openAstro.planets)):
+            td['planets_color_%s'%(i)]=openAstro.colors["planet_%s"%(i)]
+        for i in range(12):
+            td['zodiac_color_%s'%(i)]=openAstro.colors["zodiac_icon_%s" %(i)]
+        for i in range(len(openAstro.aspects)):
+            td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
+        td['stringTitle'] = "Harmonic Flower - %s"%(openAstro.name)
+
+        pages = 1
+        pagesY = (1188 * pages)+10
+        if printing:
+            td['svgWidth'] = printing['width']
+            td['svgHeight'] = printing['height']
+            td['viewbox'] = "0 %s 840 1188" %( printing['pagenum']*(1188+10) )
+        else:
+            td['svgWidth'] = 900
+            td['svgHeight'] = (td['svgWidth']/840.0)* pagesY
+            td['viewbox'] = "0 0 840 %s" %( pagesY )
+
+        td['data'] = out
+        td['pagesRect'] = '<rect x="0" y="0" width="840" height="1188" style="fill: %s;" />' % (
+            openAstro.colors['paper_1'],)
+
+        f=open(cfg.xml_svg_table)
+        template=Template(f.read()).substitute(td)
+        f.close()
+        if printing:
+            f=open(cfg.tempfilenametableprint,"w")
+        else:
+            f=open(cfg.tempfilenametable,"w")
+        f.write(template)
+        f.close()
+
+        if printing == None:
+            self.win_THF = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+            self.win_THF.connect("destroy", lambda w: self.win_THF.destroy())
+            self.win_THF.set_title("OpenAstro.org Harmonic Flower")
+            self.win_THF.set_icon_from_file(cfg.iconWindow)
+            self.win_THF.set_size_request(td['svgWidth']+30, 700)
+            self.win_THF.move(50,50)
+            vbox = Gtk.VBox()
+            hbox = Gtk.HBox()
+            name = "harmonic-flower-%s.pdf"%(openAstro.name,)
+            button = Gtk.Button(label=_('Print'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=False,window=self.win_THF,name=name))
+            hbox.pack_start(button,False,False,0)
+            button = Gtk.Button(label=_('Save as PDF'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=True,window=self.win_THF,name=name))
+            hbox.pack_start(button,False,False,0)
+            vbox.pack_start(hbox,False,False,0)
+            draw = drawSVG()
+            draw.setSVG(cfg.tempfilenametable)
+            scrolledwindow = Gtk.ScrolledWindow()
+            scrolledwindow.add(draw)
+            scrolledwindow.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            vbox.pack_start(scrolledwindow,True,True,0)
+            self.win_THF.add(vbox)
+            self.win_THF.show_all()
         return
 
     def aboutInfo(self, widget):
