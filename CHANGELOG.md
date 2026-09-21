@@ -2,6 +2,85 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: the harmogram and the Harmonic Flower, drawn — 2026-09-21
+
+### Change
+Two new Tables entries. `Tables -> Harmogram` asks a centre date, a window
+in days and which of the two readings to take; `Tables -> Harmonic Flower`
+asks nothing, since the flower is a property of the open chart.
+
+### The layout is García's, not invented
+ARMON's plot templates — the `.DHQ` files — turned out to describe their
+own drawings, and two fields settled decisions that were about to be
+guesswork:
+
+- **`QBN` is 1 in all twelve bands of `_0MES.DHQ`.** García overlays the
+  twelve curves in a single box and tells them apart by colour, dash and
+  weight; he does not stack them. The overlay is reproduced, and its line
+  weights are read straight off the `LES` field. Overlaid curves answer
+  "which harmonic is loudest here" and are hopeless for following one, so
+  the same curves are repeated below as twelve lanes over their own ranges.
+- **`RNG` is 15.** The vertical scale is fixed, not fitted to the data —
+  two harmograms are only comparable if the axis does not move under them.
+
+`_0MES.DHQ` also reads `PRE = R:lhvemjsunp` against `PEM = T:lhvemjsunp`,
+i.e. ten radix receivers against ten transiting emitters: that template is
+harmonic transits, and the ten letters are Luna, Helios, Venus, Mercurio,
+Marte, Júpiter, Saturno, Urano, Neptuno, Plutón in speed order.
+
+### The scale figure checks out independently
+`RNG = 15` is only sensible if the intensity function produces numbers of
+that size, so this is a test of the engine written earlier. The Gaussian
+weighting has an expected value of 0.0776 per random pair, which for the
+template's 100 pairs predicts a mean of 7.76. Measured across a year of
+real transits, sampled every six hours: **7.97**, with 99.74% of samples
+below 15. García's plot range and this engine's magnitudes agree to a few
+percent, which neither was fitted to do.
+
+The natal reading needed its own figure. Its 45 pairs are the same ten
+bodies read against themselves, which includes the slow pairs that stay
+locked together for years, so the distribution is far more skewed: over
+the same year the mean is 3.70 but the 99th percentile is 9.85. Scaling
+the transit ratio down by pair count would put the ceiling at 6.75 and
+widen on most dates, so that one is set from the measurement. A plot
+widens past its standard rather than clip a peak, and says so when it does.
+
+### The flower needed a reference circle
+The concentration index runs to 1, but ten bodies dropped at random
+already average 0.28, and one chart in twenty reaches 0.55 by chance
+alone. Without marks at those radii half the dial is permanently empty and
+every petal looks small. Both figures come out of the same Rayleigh
+distribution the coefficient obeys — the modulus of a walk of n unit steps
+in uniformly random directions — and they live in the engine as
+`chance_level()` and `significance_level()` rather than in the drawing.
+
+Checked against 200,000 random charts:
+
+| bodies | predicted | measured |
+|--------|-----------|----------|
+| 6      | 0.3618    | 0.3661   |
+| 10     | 0.2802    | 0.2818   |
+| 14     | 0.2368    | 0.2385   |
+
+### Verification
+Both drawings were rasterised from the real SVG before being committed,
+not reasoned about: the harmogram for the natal and transit readings and
+for 2-, 16- and 60-day windows, the flower for two charts. Four things the
+first render caught — a title duplicated from the template, axis dates
+printed over the legend heading, a hardwired grid step that labelled only
+0 and 5 on a scale of 8, and lanes flattened into straight lines by
+sharing the overlay's scale.
+
+The flower has a sanity check that does not depend on my own arithmetic:
+**2020-12-21**, the day of the Jupiter–Saturn great conjunction, comes out
+with harmonic 1 dominant at 0.679 and past the one-in-twenty level.
+
+### Still open
+Astrodines remain the intensity function itself rather than a third
+drawing, as the previous entry records. García reports testing "a
+thousand" variants of it; this one is the canonical Gaussian, parametrised
+by `WEIGHT_AT_ORB` so that changing one number moves the whole weighting.
+
 ## Feature: Harmonic Vector and Harmonic Flower engine — 2026-09-21
 
 ### Change
