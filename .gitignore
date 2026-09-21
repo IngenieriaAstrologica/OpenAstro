@@ -53,4 +53,12 @@ old/
 AGENTS.md
 TODO.md
 /README
-.claude/
+# Everything under .claude except the agent definitions and the hook wiring,
+# which are project documentation with nothing personal in them. Losing those
+# with a wiped .claude would mean rebuilding the setup from memory. Note the
+# pattern excludes the *contents*, not the directory: git does not descend
+# into an excluded directory, so `.claude/` plus a negation would not work.
+.claude/*
+!.claude/agents/
+!.claude/settings.json
+.claude/worktrees/
