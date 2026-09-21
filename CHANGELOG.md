@@ -2,6 +2,83 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Change: the harmogram's twelve curves, made legible — 2026-09-21
+
+### Change
+One line weight for all twelve harmonics, and a palette picked for
+perceptual distance rather than for even hue steps.
+
+### Why the first palette failed
+It spaced twelve hues 30° apart. That divides the *hue circle* evenly,
+which is not the same as dividing *perception* evenly: the eye separates
+greens from each other far worse than it separates red from blue, and
+CIELAB hue angle is at its least uniform in exactly the green-to-blue
+band. Four of the twelve landed in green/teal/cyan and read as one
+colour.
+
+Measuring it turned up a second cause that had nothing to do with
+spacing: **six of the twelve were below WCAG contrast 3.0 on white**, the
+palest at 1.73. Half the palette was washing out against the paper.
+
+### How they are chosen now
+Glasbey's method — walk the sRGB grid and repeatedly take the colour
+whose CIEDE2000 distance to every colour already taken is largest,
+seeding the set with the white paper and the black ink so no curve can be
+confused with the background or the text — followed by a local-search
+pass that optimises the minimum pairwise distance directly instead of
+approximating it one greedy step at a time.
+
+Three constraints, each earning its place:
+
+| constraint | what it buys |
+|---|---|
+| `C* >= 55` | vivid. Muted fills are exactly what a pure distance objective reaches for. |
+| `L* <= 61` | visible on white — this is WCAG contrast 3.0 to the point. |
+| `hue >= 18°` | walks the whole circle. |
+
+The hue floor is the least obvious and the most necessary. Maximising
+distance alone piles colours into the magenta and purple region, where
+chroma is largest and so distances are too: the unconstrained run scored
+well and looked repetitive, four purples with no cyan and no yellow
+anywhere.
+
+| | before | after |
+|---|---|---|
+| minimum CIEDE2000, any two curves | 17.6 | 18.3 |
+| between consecutive harmonics | — | 47.2 |
+| minimum hue separation | 5° | 19° |
+| chroma, mean | 58 | 66 |
+| WCAG contrast on white, minimum | 1.73 | 3.09 |
+| curves below contrast 3.0 | 6 of 12 | 0 of 12 |
+
+### The line weights are gone
+They came from ARMON's `LES` field and were drawn at one third scale,
+putting the curves between 0.67 and 3.33px. The range hurt more than it
+helped: the thin harmonics could not be followed at all and the thick
+ones buried whatever they crossed. All twelve now draw at 1.5px and the
+work of telling them apart goes to colour and dash.
+
+### What this costs
+Stated plainly, because it is a real loss: the dichromatic floor the
+intermediate palette carried is gone, deuteranopia 8.1 → 3.6. Vivid,
+white-legible and hue-spread cannot all hold together with it — the
+search runs out of candidates at the tenth colour, which is a fact about
+the sRGB gamut and not a tuning failure. The dash patterns are what
+carries that case now.
+
+An earlier attempt to make dichromacy the *objective* rather than a floor
+was worse than useless: it dropped the normal-vision minimum to 12.3,
+below the palette being replaced, so it would have made the reported
+problem worse while appearing to address a different one.
+
+### A bug in the generator, worth recording
+When the constraints were mutually infeasible the script quietly relaxed
+them and returned a palette that violated what had been asked for *while
+looking like it complied*. It fed one wrong measurement before being
+caught. It now aborts and names the step at which it ran out of
+candidates. Any search under constraints wants this: silent fallback is
+worse than failure, because the caller cannot tell the difference.
+
 ## Feature: the harmogram and the Harmonic Flower, drawn — 2026-09-21
 
 ### Change
