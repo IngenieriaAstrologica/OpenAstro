@@ -2,6 +2,224 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: the harmogram and the Harmonic Flower, drawn — 2026-09-21
+
+### Change
+Two new Tables entries. `Tables -> Harmogram` asks a centre date, a window
+in days and which of the two readings to take; `Tables -> Harmonic Flower`
+asks nothing, since the flower is a property of the open chart.
+
+### The layout is García's, not invented
+ARMON's plot templates — the `.DHQ` files — turned out to describe their
+own drawings, and two fields settled decisions that were about to be
+guesswork:
+
+- **`QBN` is 1 in all twelve bands of `_0MES.DHQ`.** García overlays the
+  twelve curves in a single box and tells them apart by colour, dash and
+  weight; he does not stack them. The overlay is reproduced, and its line
+  weights are read straight off the `LES` field. Overlaid curves answer
+  "which harmonic is loudest here" and are hopeless for following one, so
+  the same curves are repeated below as twelve lanes over their own ranges.
+- **`RNG` is 15.** The vertical scale is fixed, not fitted to the data —
+  two harmograms are only comparable if the axis does not move under them.
+
+`_0MES.DHQ` also reads `PRE = R:lhvemjsunp` against `PEM = T:lhvemjsunp`,
+i.e. ten radix receivers against ten transiting emitters: that template is
+harmonic transits, and the ten letters are Luna, Helios, Venus, Mercurio,
+Marte, Júpiter, Saturno, Urano, Neptuno, Plutón in speed order.
+
+### The scale figure checks out independently
+`RNG = 15` is only sensible if the intensity function produces numbers of
+that size, so this is a test of the engine written earlier. The Gaussian
+weighting has an expected value of 0.0776 per random pair, which for the
+template's 100 pairs predicts a mean of 7.76. Measured across a year of
+real transits, sampled every six hours: **7.97**, with 99.74% of samples
+below 15. García's plot range and this engine's magnitudes agree to a few
+percent, which neither was fitted to do.
+
+The natal reading needed its own figure. Its 45 pairs are the same ten
+bodies read against themselves, which includes the slow pairs that stay
+locked together for years, so the distribution is far more skewed: over
+the same year the mean is 3.70 but the 99th percentile is 9.85. Scaling
+the transit ratio down by pair count would put the ceiling at 6.75 and
+widen on most dates, so that one is set from the measurement. A plot
+widens past its standard rather than clip a peak, and says so when it does.
+
+### The flower needed a reference circle
+The concentration index runs to 1, but ten bodies dropped at random
+already average 0.28, and one chart in twenty reaches 0.55 by chance
+alone. Without marks at those radii half the dial is permanently empty and
+every petal looks small. Both figures come out of the same Rayleigh
+distribution the coefficient obeys — the modulus of a walk of n unit steps
+in uniformly random directions — and they live in the engine as
+`chance_level()` and `significance_level()` rather than in the drawing.
+
+Checked against 200,000 random charts:
+
+| bodies | predicted | measured |
+|--------|-----------|----------|
+| 6      | 0.3618    | 0.3661   |
+| 10     | 0.2802    | 0.2818   |
+| 14     | 0.2368    | 0.2385   |
+
+### Verification
+Both drawings were rasterised from the real SVG before being committed,
+not reasoned about: the harmogram for the natal and transit readings and
+for 2-, 16- and 60-day windows, the flower for two charts. Four things the
+first render caught — a title duplicated from the template, axis dates
+printed over the legend heading, a hardwired grid step that labelled only
+0 and 5 on a scale of 8, and lanes flattened into straight lines by
+sharing the overlay's scale.
+
+The flower has a sanity check that does not depend on my own arithmetic:
+**2020-12-21**, the day of the Jupiter–Saturn great conjunction, comes out
+with harmonic 1 dominant at 0.679 and past the one-in-twenty level.
+
+### Still open
+Astrodines remain the intensity function itself rather than a third
+drawing, as the previous entry records. García reports testing "a
+thousand" variants of it; this one is the canonical Gaussian, parametrised
+by `WEIGHT_AT_ORB` so that changing one number moves the whole weighting.
+
+## Feature: Harmonic Vector and Harmonic Flower engine — 2026-09-21
+
+### Change
+`openastromod/harmonicvector.py`. With the harmogram engine added earlier
+this completes the calculation side of Miguel García's harmonic suite;
+the drawings come next.
+
+### Read from the primary source
+The three techniques are defined in García's own *Suite Armónica* (1997),
+and the definitions settle what had been guesswork:
+
+- **Harmonic Vector** — "the Fourier spectrum of the sum of a Dirac delta
+  per planet". Each harmonic gets an amplitude and a phase:
+  `C(h) = Σ exp(i·h·λ)`. Boudineau's *Resultante Planetaria* is the same
+  thing at h=1.
+- **Harmonic Flower** — the concentration index per harmonic, `|C(h)|/n`,
+  drawn as petals. It answers a different question from a harmogram,
+  which is why the dominant harmonic often differs between the two: the
+  flower measures how tightly a chart gathers, the harmogram counts
+  conjunctions.
+- **Astrodines** — *not a third drawing*. García: "a function that
+  assigns a force value, some astrodines, to each point of the circle
+  representing the angular separation between two planets". They are the
+  aspect intensity function itself — the weighting the harmogram engine
+  already carries as a parameter. He reports testing "a thousand"
+  variants of it over several years.
+
+One more thing falls out: García notes that "Gouchon and Barbault's
+**cyclic index** is an example of using the harmogram of harmonic one
+[inverted] from Jupiter to Pluto". The curve added two entries ago is a
+special case of this machinery.
+
+### Verification
+The mathematics is checked at the points where the answer is forced.
+Eight conjunct planets give a concentration of exactly 1 in every
+harmonic; eight spread evenly give 0 in harmonic 1 and 1 in harmonic 8,
+where they meet again. An exact opposition cancels in harmonic 1 and
+concentrates in 2; a grand trine cancels in 1 and 2 and concentrates in 3.
+A conjunction's phase points at the conjunction. Across 2,000 random
+charts the index never left [0, 1].
+
+### Files changed
+- `openastromod/harmonicvector.py` — new engine module
+
+## Feature: harmogram engine — 2026-09-21
+
+### Change
+`openastromod/harmogram.py`, the calculation behind the harmograms of Mike
+O'Neill and Miguel García Ferrández: the strength of each of the first
+twelve harmonics, traced as a curve over time. The engine only; the plot
+comes next.
+
+### The technique, and where it was read from
+A harmonic chart of order N multiplies every longitude by N, which turns
+that harmonic's aspect family into conjunctions. "How strong is harmonic N"
+therefore becomes "how many conjunctions does the Nth harmonic chart hold",
+and that is a number one can plot.
+
+Two readings, and the `.DHQ` templates that ship with ARMON name both:
+
+- **Harmonic transits** — the moving sky against a fixed radix. The
+  templates mark it `R:` (receivers, natal) against `T:` (emitters,
+  transiting).
+- **Natal harmogram** — the sky against itself, both sets `T:`. García
+  introduced it because harmonic transits misbehave near the birth moment:
+  every planet is then conjunct its own radical place in *all* the low
+  harmonics, and the curves spike.
+
+**The orb is 360/13 = 27.69231°**, the literal constant in the templates.
+García's own reasoning, per the source: it is the widest orb a conjunction
+can take before reaching into the semisextile's territory at 360/12. Not
+empirical — a mathematical argument.
+
+Conjunctions are counted "weighted by a Gaussian orb". The sources say that
+and no more, giving no constant, so the weighting is parametrised rather
+than guessed: `WEIGHT_AT_ORB` states what a conjunction exactly on the
+boundary is worth and the Gaussian width follows from it.
+
+### Verification
+The source gives numbers, and they are reproduced. With O'Neill's 12° orb
+the article states the transiting Sun stays conjunct its radical place
+"about twelve days in harmonic 1, six in harmonic 2, four in harmonic 3":
+
+| Harmonic | Published | Computed |
+|----------|-----------|----------|
+| 1 | ~12 days | **12.3** |
+| 2 | ~6 days | **6.1** |
+| 3 | ~4 days | **4.1** |
+
+With García's orb the same scaling holds exactly — 28.5, 14.2, 9.4 days,
+which is 1, 1/2 and 1/3 of the first.
+
+The engine also reproduces the artefact that motivated the natal variant:
+at the birth moment harmonic transits reach 17.55 where the natal
+harmogram reads 3.78, the spike being precisely what reading the sky
+against itself removes.
+
+Plus the mechanics: an opposition is a conjunction in harmonic 2, a square
+in harmonic 4, a trine in harmonic 3 and not in 4; the weight is 1 when
+exact, `WEIGHT_AT_ORB` at the boundary, 0 beyond, and monotonic between; a
+16-day window at 36 parts a day gives 577 samples centred on the date.
+
+### Files changed
+- `openastromod/harmogram.py` — new engine module
+- `openastromod/swiss.py` — `longitudes_at()`, a thin call for dense sampling
+
+## Fix: GTK 2 constants, and dialogs now open on today — 2026-09-21
+
+### Error dialogs raised instead of showing
+`Gtk.MESSAGE_ERROR`, `Gtk.BUTTONS_CLOSE` and a mistyped `Gtk.ButtonS_CLOSE`
+survived the GTK 3 port. **None of the three exists in GTK 3**, checked
+against the live library, so each would raise `AttributeError` at the
+moment it was asked to report a problem — the Monthly Timeline's two
+validation messages and the print-failure dialog. They are now
+`Gtk.MessageType.ERROR` and `Gtk.ButtonsType.CLOSE`. Five uses across
+three call sites; none remain.
+
+### Dialogs open on the current date and time
+Transits, Lunar Return, Primary Directions and Atacir reopened on
+whatever date was last used, which is rarely the one wanted — the common
+case is *now*. All six date-taking dialogs now open on the current moment.
+Solar Return and Secondary Progressions already did.
+
+The distinction that matters: **dates reset, technique settings do not.**
+Cycle, time key, measure and direct/converse are still remembered, because
+those express how someone works rather than what they are looking at
+today. The date fields no longer write to `astrocfg` either, since nothing
+reads them back, and one `last()` helper left with no callers went with
+them.
+
+### Verification
+Every one of the six dialogs checked programmatically: none reads a date
+from `astrocfg`, all six seed from the current moment, and no date field
+is written back. The nine technique settings that should persist still do.
+
+### Files changed
+- `openastro` — the three message dialogs, date seeding in `specialTransit`,
+  `specialLunar`, `specialDirected` and `specialAtacir`
+
 ## Feature: import Kepler/CPA natal files — 2026-09-21
 
 ### Change

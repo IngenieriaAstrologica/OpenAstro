@@ -53,7 +53,7 @@ from gi.repository import Gtk, Gdk, GLib, GObject, Rsvg, cairo
 #internal openastro modules
 sys.path.append("/usr/lib/python3.5/dist-packages") #trying to 'fix' some problems importing openastromod on some distros
 sys.path.append("/usr/lib/python3.5/site-packages") #trying to 'fix' some problems importing openastromod on some distros
-from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine, transit as transit_engine, cyclic as cyclic_engine
+from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine, transit as transit_engine, cyclic as cyclic_engine, harmogram as harmogram_engine, harmonicvector as harmonicvector_engine
 
 def _rsvg_render(handle, cr):
     """Render a whole SVG handle at its natural size onto a Cairo context,
@@ -117,6 +117,48 @@ GRID_RIGHT_MARGIN = 20
 GRID_LOTS_X = 435
 GRID_PLANETS_X = 533
 GRID_HOUSES_X = 610
+
+#Harmogram plotting. ARMON's own templates (the `.DHQ` files) settle the
+#layout: `QBN` is 1 in all twelve bands, so García overlays the twelve
+#curves in a single box and tells them apart by colour, dash and weight,
+#not by stacking them. `LES` carries the weight (`\AbCb:4` -> 4) and is
+#reproduced; its letters encode a dash pattern nobody has decoded, so the
+#dashes below are ours.
+#
+#Twelve hues 30 deg apart confuse in pairs, so odd harmonics sit at
+#L*=52 and even ones at L*=68: hue separates the group, lightness
+#separates the neighbours, dash separates them again. Chroma is fitted to
+#the sRGB gamut; the narrowest luminance gap between adjacent harmonics is
+#0.105.
+HARMOGRAM_CURVE_COLORS = (
+    '#ea2d5f', '#ff8860', '#c98500', '#c8cc2f', '#309a1c', '#00bc8b',
+    '#008b89', '#00b5d5', '#0084bb', '#81a3ff', '#a55ad7', '#ff75c5')
+#stroke-dasharray per harmonic, '' for solid
+HARMOGRAM_CURVE_DASHES = (
+    '', '7,3', '2,3', '9,3,2,3', '4,3', '1,3',
+    '12,4', '6,3,2,3', '3,2', '10,3,3,3', '5,2', '2,2,6,2')
+#Line weights, read straight off `LES` in _0MES.DHQ (harmonic 1 first).
+HARMOGRAM_CURVE_WIDTHS = (3, 6, 6, 3, 3, 3, 10, 2, 3, 2, 3, 4)
+
+#Fixed vertical scale. A fixed scale is the whole point -- two harmograms
+#of different dates are only comparable if the axis does not move under
+#them -- and the plot widens past it rather than clip a peak, saying so
+#when it does.
+#
+#The transit figure is Garcia's own: `RNG` is 15 in _0MES.DHQ, whose two
+#body sets are ten by ten, so 0.15 per pair. It checks out independently.
+#The Gaussian weighting has an expected value of 0.0776 per random pair,
+#so 100 pairs average 7.76 -- measured 7.97 across a year of real transits
+#-- and 15 is twice that mean, covering 99.74% of samples.
+#
+#The natal reading needed its own figure. Its 45 pairs are the same ten
+#bodies read against themselves, which includes the slow pairs that stay
+#locked together for years, so the distribution is far more skewed: over
+#the same year its mean is 3.70 but its 99th percentile is 9.85. Scaling
+#the transit ratio down by pair count would put the ceiling at 6.75 and
+#widen on most dates, so this one is set from that measurement.
+HARMOGRAM_RANGE_TRANSITS_PER_PAIR = 0.15
+HARMOGRAM_RANGE_NATAL_PER_PAIR = 10.0 / 45.0
 
 #directories
 if LOCAL:
@@ -4001,6 +4043,8 @@ class mainWindow:
         tables_menu.append(mi(_('Arabic Parts'), self.tableArabicParts, 'ArabicParts'))
         tables_menu.append(mi(_('Profections'), self.tableProfections, 'Profections'))
         tables_menu.append(mi(_('Cyclic Index'), self.tableCyclicIndex, 'CyclicIndex'))
+        tables_menu.append(mi(_('Harmogram'), self.tableHarmogram, 'Harmogram'))
+        tables_menu.append(mi(_('Harmonic Flower'), self.tableHarmonicFlower, 'HarmonicFlower'))
         menubar.append(tables_top)
 
         #Zoom (radio)
@@ -4374,7 +4418,7 @@ class mainWindow:
             entry[k]=Gtk.Entry()
             entry[k].set_max_length(ln)
             entry[k].set_width_chars(ln)
-            entry[k].set_text(last('transit_'+k, default))
+            entry[k].set_text(default)
             hbox.pack_start(entry[k], False, False, 0)
         table.attach(hbox,0,1,1,2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
@@ -4384,7 +4428,7 @@ class mainWindow:
             entry[k]=Gtk.Entry()
             entry[k].set_max_length(ln)
             entry[k].set_width_chars(ln)
-            entry[k].set_text(last('transit_'+k, default))
+            entry[k].set_text(default)
             hbox.pack_start(entry[k], False, False, 0)
         #the commonest transit is the one happening right now, and that used
         #to be the only one this dialog could draw: keep it one click away
@@ -4457,11 +4501,6 @@ class mainWindow:
         if measure not in primary_engine.TRANSIT_MEASURE_KEYS:
             measure = "ecliptic"
         #remember last used parameters in astrocfg for the next run
-        db.setAstrocfg('transit_Y', '%d'%(dt_local.year))
-        db.setAstrocfg('transit_M', '%02d'%(dt_local.month))
-        db.setAstrocfg('transit_D', '%02d'%(dt_local.day))
-        db.setAstrocfg('transit_h', '%02d'%(dt_local.hour))
-        db.setAstrocfg('transit_m', '%02d'%(dt_local.minute))
         db.setAstrocfg('transit_dir', '1' if converse else '0')
         db.setAstrocfg('transit_measure', measure)
         openAstro.localToTransit(dt_local, converse, measure)
@@ -4540,23 +4579,20 @@ class mainWindow:
         now = datetime.datetime.now()
         table.attach(Gtk.Label(label=_("Nearest Lunar Return to this date")+":"), 0, 3, 0, 1, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
         entry={}
-        def last(key, default):
-            val = db.getAstrocfg(key)
-            return val if val is not None else default
         entry['Y']=Gtk.Entry()
         entry['Y'].set_max_length(4)
         entry['Y'].set_width_chars(4)
-        entry['Y'].set_text(last('lunar_Y', str(now.year)))
+        entry['Y'].set_text(str(now.year))
         table.attach(entry['Y'], 0, 1, 1, 2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
         entry['M']=Gtk.Entry()
         entry['M'].set_max_length(2)
         entry['M'].set_width_chars(2)
-        entry['M'].set_text(last('lunar_M', '%02d'%(now.month)))
+        entry['M'].set_text('%02d'%(now.month))
         table.attach(entry['M'], 1, 2, 1, 2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
         entry['D']=Gtk.Entry()
         entry['D'].set_max_length(2)
         entry['D'].set_width_chars(2)
-        entry['D'].set_text(last('lunar_D', '%02d'%(now.day)))
+        entry['D'].set_text('%02d'%(now.day))
         table.attach(entry['D'], 2, 3, 1, 2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
 
         #make the ui layout with ok button
@@ -4587,9 +4623,6 @@ class mainWindow:
             return
         if not (1 <= intmonth <= 12) or not (1 <= intday <= 31):
             return
-        db.setAstrocfg('lunar_Y', entry['Y'].get_text())
-        db.setAstrocfg('lunar_M', entry['M'].get_text())
-        db.setAstrocfg('lunar_D', entry['D'].get_text())
         openAstro.localToLunar(intyear, intmonth, intday)
         self.win_SL.destroy()
         #a fresh lunar return defaults to the bi-wheel view
@@ -4769,19 +4802,19 @@ class mainWindow:
         entry['Y']=Gtk.Entry()
         entry['Y'].set_max_length(4)
         entry['Y'].set_width_chars(4)
-        entry['Y'].set_text(last('directed_Y', str(now.year)))
+        entry['Y'].set_text(str(now.year))
         hbox.pack_start(entry['Y'], False, False, 0)
         hbox.pack_start(Gtk.Label(label=_('Month')+": "), False, False, 0)
         entry['M']=Gtk.Entry()
         entry['M'].set_max_length(2)
         entry['M'].set_width_chars(2)
-        entry['M'].set_text(last('directed_M', '%02d'%(now.month)))
+        entry['M'].set_text('%02d'%(now.month))
         hbox.pack_start(entry['M'], False, False, 0)
         hbox.pack_start(Gtk.Label(label=_('Day')+": "), False, False, 0)
         entry['D']=Gtk.Entry()
         entry['D'].set_max_length(2)
         entry['D'].set_width_chars(2)
-        entry['D'].set_text(last('directed_D', str(now.day)))
+        entry['D'].set_text(str(now.day))
         hbox.pack_start(entry['D'], False, False, 0)
         table.attach(hbox,0,1,1,2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
@@ -4790,13 +4823,13 @@ class mainWindow:
         entry['h']=Gtk.Entry()
         entry['h'].set_max_length(2)
         entry['h'].set_width_chars(2)
-        entry['h'].set_text(last('directed_h', '%02d'%(now.hour)))
+        entry['h'].set_text('%02d'%(now.hour))
         hbox.pack_start(entry['h'], False, False, 0)
         hbox.pack_start(Gtk.Label(label=_('Min')+": "), False, False, 0)
         entry['m']=Gtk.Entry()
         entry['m'].set_max_length(2)
         entry['m'].set_width_chars(2)
-        entry['m'].set_text(last('directed_m', '%02d'%(now.minute)))
+        entry['m'].set_text('%02d'%(now.minute))
         hbox.pack_start(entry['m'], False, False, 0)
         table.attach(hbox,0,1,2,3, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
@@ -4864,11 +4897,6 @@ class mainWindow:
         converse = entry['R'].get_active() == 1
         measure = self.directed_measure_list[entry['S'].get_active()]
         #remember last used parameters in astrocfg for the next run
-        db.setAstrocfg('directed_Y', entry['Y'].get_text())
-        db.setAstrocfg('directed_M', entry['M'].get_text())
-        db.setAstrocfg('directed_D', entry['D'].get_text())
-        db.setAstrocfg('directed_h', entry['h'].get_text())
-        db.setAstrocfg('directed_m', entry['m'].get_text())
         db.setAstrocfg('directed_key', key)
         db.setAstrocfg('directed_dir', '1' if converse else '0')
         db.setAstrocfg('directed_measure', measure)
@@ -4911,7 +4939,7 @@ class mainWindow:
             entry[k]=Gtk.Entry()
             entry[k].set_max_length(ln)
             entry[k].set_width_chars(ln)
-            entry[k].set_text(last('atacir_'+k, default))
+            entry[k].set_text(default)
             hbox.pack_start(entry[k], False, False, 0)
         table.attach(hbox,0,1,1,2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
@@ -4993,9 +5021,6 @@ class mainWindow:
         converse = entry['R'].get_active() == 1
         key = self.atacir_key_list[entry['K'].get_active()]
         #remember last used parameters in astrocfg for the next run
-        db.setAstrocfg('atacir_Y', entry['Y'].get_text())
-        db.setAstrocfg('atacir_M', entry['M'].get_text())
-        db.setAstrocfg('atacir_D', entry['D'].get_text())
         db.setAstrocfg('atacir_cycle', str(cycle))
         db.setAstrocfg('atacir_dir', '1' if converse else '0')
         db.setAstrocfg('atacir_key', key)
@@ -5042,14 +5067,14 @@ class mainWindow:
                 m = int(self.tMTentry['M'])
             except ValueError:
                 dialog.destroy()
-                md = Gtk.MessageDialog(self.window,0,Gtk.MESSAGE_ERROR,
-                    Gtk.BUTTONS_CLOSE,_("Year and Month must be integers"))
+                md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                    Gtk.ButtonsType.CLOSE,_("Year and Month must be integers"))
                 md.run(); md.destroy()
                 return
             if not (1 <= m <= 12) or not (1000 <= y <= 9999):
                 dialog.destroy()
-                md = Gtk.MessageDialog(self.window,0,Gtk.MESSAGE_ERROR,
-                    Gtk.BUTTONS_CLOSE,_("Month must be 1..12 and Year 1000..9999"))
+                md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                    Gtk.ButtonsType.CLOSE,_("Month must be 1..12 and Year 1000..9999"))
                 md.run(); md.destroy()
                 return
             dialog.destroy()
@@ -5091,7 +5116,7 @@ class mainWindow:
             res = print_op.run(Gtk.PrintOperationAction.PRINT_DIALOG, window)       
 
         if res == Gtk.PrintOperationResult.ERROR:
-            error_dialog = Gtk.MessageDialog(window,0,Gtk.MESSAGE_ERROR,Gtk.ButtonS_CLOSE,"Error printing:\n")
+            error_dialog = Gtk.MessageDialog(window,0,Gtk.MessageType.ERROR,Gtk.ButtonsType.CLOSE,"Error printing:\n")
             error_dialog.set_destroy_with_parent(True)
             error_dialog.connect("response", lambda w,id: w.destroy())
             error_dialog.show()
@@ -5160,6 +5185,18 @@ class mainWindow:
             _rsvg_render(svg, cr)
         elif(self.tabletype == "cyclic"):
             self.tableCyclicIndexShow(printing)
+            #draw svg for printing
+            svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
+            svg.set_dpi(900)
+            _rsvg_render(svg, cr)
+        elif(self.tabletype == "harmogram"):
+            self.tableHarmogramShow(printing)
+            #draw svg for printing
+            svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
+            svg.set_dpi(900)
+            _rsvg_render(svg, cr)
+        elif(self.tabletype == "harmonicflower"):
+            self.tableHarmonicFlower(None,printing)
             #draw svg for printing
             svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
             svg.set_dpi(900)
@@ -6755,6 +6792,587 @@ class mainWindow:
             self.win_TCI.show_all()
         return
 
+
+    def tableHarmogram(self, widget):
+        #Harmogram: how loud each of the first twelve harmonics is, traced
+        #across a window of days. Everything asked here is one of ARMON's
+        #own `.DHQ` fields -- FCH the centre date, NDY the days, NDP the
+        #samples per day, PRE/PEM which set is measured against which.
+        dialog = Gtk.Dialog(_("Harmogram"),
+                     self.window,
+                     0,
+                     (_("_Cancel"), Gtk.ResponseType.REJECT,
+                      _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog.set_destroy_with_parent(True)
+        dialog.connect("destroy", lambda w: dialog.destroy())
+        dialog.set_border_width(5)
+        dialog.move(50,50)
+        now = datetime.datetime.now()
+        self.tHGwidget={}
+
+        def last(key, default):
+            val = db.getAstrocfg(key)
+            return val if val is not None else default
+
+        #the centre moment, which the plot marks with a vertical line: the
+        #window opens half before it and half after
+        dialog.vbox.pack_start(Gtk.Label(label=_('Centre date and time')+":"), False, False, 2)
+        hbox = Gtk.HBox(spacing=4)
+        for k, lbl, ln, default in (('Y', 'Year', 4, str(now.year)),
+                                    ('M', 'Month', 2, '%02d'%(now.month,)),
+                                    ('D', 'Day', 2, '%02d'%(now.day,)),
+                                    ('h', 'Hour', 2, '%02d'%(now.hour,)),
+                                    ('m', 'Min', 2, '%02d'%(now.minute,))):
+            hbox.pack_start(Gtk.Label(label=_(lbl)+": "), False, False, 0)
+            self.tHGwidget[k]=Gtk.Entry()
+            self.tHGwidget[k].set_max_length(ln)
+            self.tHGwidget[k].set_width_chars(ln)
+            self.tHGwidget[k].set_text(default)
+            hbox.pack_start(self.tHGwidget[k], False, False, 0)
+        dialog.vbox.pack_start(hbox, False, False, 2)
+
+        #NDY and NDP. _0MES.DHQ is 16 days at 36 parts a day; the defaults
+        #are his, and 36 is already far finer than the curve needs.
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Days')+": "), False, False, 0)
+        self.tHGwidget['days']=Gtk.SpinButton()
+        self.tHGwidget['days'].set_adjustment(Gtk.Adjustment(
+            value=float(last('harmogram_days', '16')), lower=1, upper=400,
+            step_increment=1, page_increment=10))
+        self.tHGwidget['days'].set_numeric(True)
+        self.tHGwidget['days'].set_width_chars(4)
+        hbox.pack_start(self.tHGwidget['days'], False, False, 0)
+        hbox.pack_start(Gtk.Label(label="   "+_('Samples per day')+": "), False, False, 0)
+        self.tHGwidget['ppd']=Gtk.SpinButton()
+        self.tHGwidget['ppd'].set_adjustment(Gtk.Adjustment(
+            value=float(last('harmogram_ppd', '36')), lower=1, upper=96,
+            step_increment=1, page_increment=6))
+        self.tHGwidget['ppd'].set_numeric(True)
+        self.tHGwidget['ppd'].set_width_chars(4)
+        hbox.pack_start(self.tHGwidget['ppd'], False, False, 0)
+        dialog.vbox.pack_start(hbox, False, False, 2)
+
+        #PRE against PEM. The natal harmogram is the default because
+        #harmonic transits misbehave near the birth moment -- see the head
+        #of openastromod/harmogram.py.
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Reading')+": "), False, False, 0)
+        self.harmogram_mode_list = ["natal", "transits"]
+        self.tHGwidget['mode']=Gtk.ComboBoxText()
+        self.tHGwidget['mode'].append_text(_("Natal harmogram (sky against itself)"))
+        self.tHGwidget['mode'].append_text(_("Harmonic transits (sky against radix)"))
+        mode_was = last('harmogram_mode', 'natal')
+        self.tHGwidget['mode'].set_active(
+            self.harmogram_mode_list.index(mode_was) if mode_was in self.harmogram_mode_list else 0)
+        hbox.pack_start(self.tHGwidget['mode'], False, False, 0)
+        dialog.vbox.pack_start(hbox, False, False, 2)
+        dialog.show_all()
+
+        ret = dialog.run()
+        if ret != Gtk.ResponseType.ACCEPT:
+            dialog.destroy()
+            return
+        try:
+            centre = datetime.datetime(
+                int(self.tHGwidget['Y'].get_text()), int(self.tHGwidget['M'].get_text()),
+                int(self.tHGwidget['D'].get_text()), int(self.tHGwidget['h'].get_text()),
+                int(self.tHGwidget['m'].get_text()))
+        except ValueError:
+            dialog.destroy()
+            md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("That is not a valid date and time"))
+            md.run(); md.destroy()
+            return
+        days = self.tHGwidget['days'].get_value_as_int()
+        ppd = self.tHGwidget['ppd'].get_value_as_int()
+        mode = self.harmogram_mode_list[self.tHGwidget['mode'].get_active()]
+        #every sample is a full ephemeris call for ten bodies, so the cost
+        #is days*ppd; past a few thousand the dialog would just hang
+        if days * ppd > 3000:
+            dialog.destroy()
+            md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,
+                _("Days times samples per day must not exceed 3000 (asked for %d)") % (days*ppd,))
+            md.run(); md.destroy()
+            return
+        dialog.destroy()
+        db.setAstrocfg('harmogram_days', str(days))
+        db.setAstrocfg('harmogram_ppd', str(ppd))
+        db.setAstrocfg('harmogram_mode', mode)
+        self.tHGentry = {'C': centre, 'days': days, 'ppd': ppd, 'mode': mode}
+        self.tableHarmogramShow()
+        return
+
+    def tableHarmogramShow(self, printing=None):
+        #Two views of the same twelve curves. The top box is ARMON's own
+        #layout -- QBN is 1 in every band of _0MES.DHQ, so Garcia overlays
+        #all twelve and separates them by colour, dash and weight. Overlaid
+        #curves answer "which harmonic is loudest here"; they are hopeless
+        #for following one harmonic, so the same curves are repeated below
+        #as twelve lanes on the same scale.
+        self.tabletype="harmogram"
+        try:
+            centre = self.tHGentry['C']
+            days = float(self.tHGentry['days'])
+            ppd = int(self.tHGentry['ppd'])
+            mode = self.tHGentry['mode']
+        except (AttributeError, KeyError, ValueError, TypeError):
+            return
+
+        #the date is wall-clock at the home place, as the transit dialog
+        #reads it; the ephemeris wants UT
+        tz_name = zonetab.nearest_tz(float(openAstro.home_geolat),
+            float(openAstro.home_geolon), zonetab.timezones())[2]
+        centre_utc, tz_offset = transit_engine.local_to_utc(centre, tz_name)
+        jd_centre = primary_engine.julday(centre_utc.year, centre_utc.month, centre_utc.day,
+            openAstro.decHourJoin(centre_utc.hour, centre_utc.minute, centre_utc.second))
+
+        bodies = harmogram_engine.DEFAULT_BODIES
+        natal = (mode != 'transits')
+        radix = None if natal else [openAstro.planets_degree_ut[i]
+            for i in harmogram_engine.RADIX_INDICES]
+        jds, curves = harmogram_engine.curves(
+            lambda jd: ephemeris.longitudes_at(jd, bodies),
+            jd_centre, days, ppd, radix=radix)
+        harmonics = sorted(curves)
+        mid = len(jds) // 2
+
+        #fixed scale, as RNG in the templates, so two harmograms are
+        #comparable; widened only if the data would otherwise be clipped
+        pairs = harmogram_engine.max_intensity(len(bodies), len(bodies), same_set=natal)
+        standard = pairs * (HARMOGRAM_RANGE_NATAL_PER_PAIR if natal
+                            else HARMOGRAM_RANGE_TRANSITS_PER_PAIR)
+        scale = standard
+        data_max = max(max(v) for v in curves.values())
+        widened = data_max > scale
+        if widened:
+            scale = data_max * 1.02
+
+        ink = openAstro.colors['paper_0']
+        textstyle = "font-size: 11px; fill: %s" % (ink,)
+        smallstyle = "font-size: 8px; fill: %s" % (ink,)
+        headerstyle = "font-size: 13px; font-weight: bold; fill: %s" % (ink,)
+        captionstyle = "font-size: 10px; fill: %s" % (ink,)
+        gridstyle = 'stroke:%s; stroke-width: 1px; stroke-opacity:.6; fill:none' % (ink,)
+        finestyle = 'stroke:%s; stroke-width: .5px; stroke-opacity:.2; fill:none' % (ink,)
+        nowstyle = 'stroke:%s; stroke-width: 1px; stroke-opacity:.75; stroke-dasharray:5,3; fill:none' % (ink,)
+
+        #the template wraps $data in translate(20,40), so y here is
+        #(page y - 40) and the single page runs y in [-40, 1148]
+        X0, X1 = 62.0, 766.0
+        WIDTH = X1 - X0
+        BIG_TOP, BIG_H = 52.0, 380.0
+        LEGEND_Y = 486.0
+        LANE_TOP = 524.0
+        LANE_H, LANE_GAP = 44.0, 4.0
+
+        def x_of(jd):
+            return X0 + (jd - jds[0]) / (jds[-1] - jds[0]) * WIDTH
+
+        def y_of(top, h, v, sc=None, base=0.0):
+            sc = scale if sc is None else sc
+            v = max(base, min(sc, float(v)))
+            return top + h - ((v - base) / (sc - base)) * h
+
+        def local_at(jd):
+            return centre + datetime.timedelta(days=(jd - jd_centre))
+
+        def dasharray(n):
+            if not HARMOGRAM_CURVE_DASHES[n-1]:
+                return ''
+            return 'stroke-dasharray:%s;' % (HARMOGRAM_CURVE_DASHES[n-1],)
+
+        def polyline(top, h, n, sc=None, base=0.0, opacity=1.0):
+            pts = ' '.join('%.1f,%.1f' % (x_of(jd), y_of(top, h, v, sc, base))
+                           for jd, v in zip(jds, curves[n]))
+            #ARMON's weights are for a 640x350 screen; a third of them is
+            #the same visual weight on an 840pt page
+            return '<polyline points="%s" style="fill:none; stroke:%s; stroke-width:%.1fpx; stroke-opacity:%.2f; %s"/>\n' % (
+                pts, HARMOGRAM_CURVE_COLORS[n-1],
+                max(0.8, HARMOGRAM_CURVE_WIDTHS[n-1] / 3.0), opacity, dasharray(n))
+
+        def time_axis(top, h, labels=True):
+            #one fine rule a day, halved until the rules can be told apart
+            piece = ''
+            step = 1
+            while days / step > 32:
+                step *= 2
+            d = 0.0
+            while d <= days + 1e-9:
+                x = x_of(jds[0] + d)
+                piece += '<line x1="%.1f" y1="%s" x2="%.1f" y2="%s" style="%s"/>\n' % (
+                    x, top, x, top + h, finestyle)
+                d += step
+            #the moment itself
+            x = x_of(jd_centre)
+            piece += '<line x1="%.1f" y1="%s" x2="%.1f" y2="%s" style="%s"/>\n' % (
+                x, top, x, top + h, nowstyle)
+            if labels:
+                for frac in (0.0, 0.25, 0.5, 0.75, 1.0):
+                    jd = jds[0] + frac * (jds[-1] - jds[0])
+                    lt = local_at(jd)
+                    piece += '<text x="%.1f" y="%s" text-anchor="middle" style="%s">%s</text>\n' % (
+                        x_of(jd), top + h + 13, smallstyle,
+                        lt.strftime('%Y-%m-%d') if days > 2 else lt.strftime('%m-%d %H:%M'))
+            return piece
+
+        out = '<g>'
+        measured = (_("the sky against itself, %d bodies, %d pairs") % (len(bodies), int(pairs))
+                    if natal else
+                    _("radix receivers against transiting emitters, %d pairs") % (int(pairs),))
+        out += '<text x="0" y="14" style="%s">%s \xb7 %g %s \xb7 %d %s \xb7 %s</text>\n' % (
+            captionstyle, measured, days, _("days"), ppd, _("samples per day"),
+            _("conjunctions in each harmonic chart, Gaussian orb %.2f\xb0") % (harmogram_engine.ORB,))
+        widenote = ''
+        if widened:
+            widenote = " (" + _("widened past the standard %.1f to fit a peak of %.2f") % (
+                standard, data_max) + ")"
+        out += '<text x="0" y="28" style="%s">%s 0-%.1f%s \xb7 %s %s</text>\n' % (
+            captionstyle, _("scale"), scale, widenote,
+            _("times local to"), openAstro.home_location)
+
+        #--- the overlay, as ARMON draws it ---
+        out += '<rect x="%s" y="%s" width="%s" height="%s" style="%s"/>\n' % (
+            X0, BIG_TOP, WIDTH, BIG_H, gridstyle)
+        out += time_axis(BIG_TOP, BIG_H)
+        #a step of 5 labels only 0 and 5 on a scale of 8; pick it so the
+        #box carries four to eight rules whatever the range
+        vstep = 5.0
+        for cand in (0.5, 1.0, 2.0, 2.5, 5.0, 10.0, 20.0, 25.0, 50.0):
+            if scale / cand <= 8.0:
+                vstep = cand
+                break
+        v = 0.0
+        while v <= scale + 1e-9:
+            y = y_of(BIG_TOP, BIG_H, v)
+            out += '<line x1="%s" y1="%.1f" x2="%s" y2="%.1f" style="%s"/>\n' % (
+                X0, y, X1, y, finestyle)
+            out += '<text x="%s" y="%.1f" text-anchor="end" style="%s">%g</text>\n' % (
+                X0 - 5, y + 3, smallstyle, v)
+            v += vstep
+        #slightly translucent: twelve overlaid curves cross constantly, and
+        #at full opacity whichever happens to be drawn last simply wins
+        for n in harmonics:
+            out += polyline(BIG_TOP, BIG_H, n, opacity=0.85)
+
+        #--- legend, ordered by how loud each harmonic is at the centre ---
+        rank = sorted(harmonics, key=lambda n: -curves[n][mid])
+        out += '<text x="0" y="%s" style="%s">%s</text>\n' % (
+            LEGEND_Y - 14, textstyle, _("At the centre moment, loudest first")+":")
+        for k, n in enumerate(rank):
+            x = (X0 - 62) + (k % 6) * 122.0
+            y = LEGEND_Y + (k // 6) * 16.0
+            out += '<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" style="stroke:%s; stroke-width:%.1fpx; %s"/>\n' % (
+                x, y - 3, x + 22, y - 3, HARMOGRAM_CURVE_COLORS[n-1],
+                max(1.0, HARMOGRAM_CURVE_WIDTHS[n-1] / 3.0), dasharray(n))
+            out += '<text x="%.1f" y="%.1f" style="font-size: 10px; font-weight: bold; fill: %s">H%d</text>\n' % (
+                x + 27, y, HARMOGRAM_CURVE_COLORS[n-1], n)
+            out += '<text x="%.1f" y="%.1f" style="%s">%.2f</text>\n' % (
+                x + 52, y, smallstyle, curves[n][mid])
+
+        #--- the same curves, one lane each ---
+        for k, n in enumerate(harmonics):
+            top = LANE_TOP + k * (LANE_H + LANE_GAP)
+            out += '<rect x="%s" y="%.1f" width="%s" height="%s" style="%s"/>\n' % (
+                X0, top, WIDTH, LANE_H, finestyle)
+            out += time_axis(top, LANE_H, labels=(n == harmonics[-1]))
+            #A lane is for following one harmonic's shape, and on the shared
+            #scale the quiet ones flatten into straight lines. So a lane
+            #runs over its own curve's range instead, filling the box: the
+            #overlay above already carries the absolute magnitudes, and the
+            #two figures on the right pin this lane's ends to real values.
+            hi, lo = max(curves[n]), min(curves[n])
+            pad = (hi - lo) * 0.10 or 0.5
+            lane_lo, lane_hi = lo - pad, hi + pad
+            out += polyline(top, LANE_H, n, sc=lane_hi, base=lane_lo)
+            out += '<text x="%s" y="%.1f" text-anchor="end" style="font-size: 11px; font-weight: bold; fill: %s">H%d</text>\n' % (
+                X0 - 6, top + LANE_H / 2 + 4, HARMOGRAM_CURVE_COLORS[n-1], n)
+            #each figure sits at the height of the value it names, so the
+            #two of them read as the axis they actually are
+            out += '<text x="%s" y="%.1f" style="%s">%.2f</text>\n' % (
+                X1 + 5, y_of(top, LANE_H, hi, lane_hi, lane_lo) + 3, smallstyle, hi)
+            out += '<text x="%s" y="%.1f" style="%s">%.2f</text>\n' % (
+                X1 + 5, y_of(top, LANE_H, lo, lane_hi, lane_lo) + 3, smallstyle, lo)
+        out += '</g>'
+
+        td = {}
+        td['paper_color_0']=openAstro.colors["paper_0"]
+        td['paper_color_1']=openAstro.colors["paper_1"]
+        for i in range(len(openAstro.planets)):
+            td['planets_color_%s'%(i)]=openAstro.colors["planet_%s"%(i)]
+        for i in range(12):
+            td['zodiac_color_%s'%(i)]=openAstro.colors["zodiac_icon_%s" %(i)]
+        for i in range(len(openAstro.aspects)):
+            td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
+        td['stringTitle'] = "%s %s - %s"%(
+            "Natal harmogram" if natal else "Harmonic transits",
+            centre.strftime('%Y-%m-%d %H:%M'), openAstro.name)
+
+        pages = 1
+        pagesY = (1188 * pages)+10
+        if printing:
+            td['svgWidth'] = printing['width']
+            td['svgHeight'] = printing['height']
+            td['viewbox'] = "0 %s 840 1188" %( printing['pagenum']*(1188+10) )
+        else:
+            td['svgWidth'] = 1050
+            td['svgHeight'] = (td['svgWidth']/840.0)* pagesY
+            td['viewbox'] = "0 0 840 %s" %( pagesY )
+
+        td['data'] = out
+        td['pagesRect'] = ''.join(
+            '<rect x="0" y="%s" width="840" height="1188" style="fill: %s;" />' % (
+                p * (1188 + 10), openAstro.colors['paper_1'])
+            for p in range(pages))
+
+        f=open(cfg.xml_svg_table)
+        template=Template(f.read()).substitute(td)
+        f.close()
+        if printing:
+            f=open(cfg.tempfilenametableprint,"w")
+        else:
+            f=open(cfg.tempfilenametable,"w")
+        f.write(template)
+        f.close()
+
+        if printing == None:
+            self.win_THG = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+            self.win_THG.connect("destroy", lambda w: self.win_THG.destroy())
+            self.win_THG.set_title("OpenAstro.org Harmogram")
+            self.win_THG.set_icon_from_file(cfg.iconWindow)
+            self.win_THG.set_size_request(td['svgWidth']+30, 700)
+            self.win_THG.move(50,50)
+            vbox = Gtk.VBox()
+            hbox = Gtk.HBox()
+            name = "harmogram-%s.pdf"%(centre.strftime('%Y%m%d'),)
+            button = Gtk.Button(label=_('Print'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=False,window=self.win_THG,name=name))
+            hbox.pack_start(button,False,False,0)
+            button = Gtk.Button(label=_('Save as PDF'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=True,window=self.win_THG,name=name))
+            hbox.pack_start(button,False,False,0)
+            vbox.pack_start(hbox,False,False,0)
+            draw = drawSVG()
+            draw.setSVG(cfg.tempfilenametable)
+            scrolledwindow = Gtk.ScrolledWindow()
+            scrolledwindow.add(draw)
+            scrolledwindow.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            vbox.pack_start(scrolledwindow,True,True,0)
+            self.win_THG.add(vbox)
+            self.win_THG.show_all()
+        return
+
+    def tableHarmonicFlower(self, widget, printing=None):
+        #The Harmonic Flower: the chart's Fourier spectrum drawn as twelve
+        #petals. See openastromod/harmonicvector.py -- a Dirac delta at
+        #each planet, the h-th coefficient's modulus normalised by the
+        #number of planets, which is 1 when they all share one point of the
+        #h-th harmonic circle and 0 when they cancel.
+        #
+        #Needs no dialog: unlike a harmogram it is a property of the open
+        #chart, not of a moment picked by the user.
+        self.tabletype="harmonicflower"
+        lons = [openAstro.planets_degree_ut[i]
+                for i in harmogram_engine.RADIX_INDICES]
+        petals = harmonicvector_engine.flower(lons)
+        dominant = max(petals, key=lambda p: p['concentration'])
+
+        ink = openAstro.colors['paper_0']
+        textstyle = "font-size: 11px; fill: %s" % (ink,)
+        smallstyle = "font-size: 9px; fill: %s" % (ink,)
+        captionstyle = "font-size: 10px; fill: %s" % (ink,)
+        ringstyle = 'stroke:%s; stroke-width: .5px; stroke-opacity:.3; fill:none' % (ink,)
+        spokestyle = 'stroke:%s; stroke-width: .5px; stroke-opacity:.18; fill:none' % (ink,)
+
+        #the template wraps $data in translate(20,40), so y here is page y - 40
+        CX, CY, R = 400.0, 352.0, 278.0
+        TABLE_TOP = 712.0
+        ROW_H = 26.0
+
+        def point(angle_deg, radius):
+            #harmonic 1 at the top, the rest clockwise: the angle is the
+            #harmonic's slot, not a longitude
+            a = math.radians(angle_deg)
+            return CX + radius * math.sin(a), CY - radius * math.cos(a)
+
+        def sign_of(lon):
+            lon = float(lon) % 360.0
+            sign = int(lon / 30.0)
+            rest = lon - sign * 30.0
+            d = int(rest)
+            m = int(round((rest - d) * 60.0))
+            if m == 60:
+                d, m = d + 1, 0
+            return "%02d\xb0%02d' %s" % (d, m, openAstro.zodiac_short[sign])
+
+        out = '<g>'
+        out += '<text x="0" y="14" style="%s">%s \xb7 %s \xb7 %s</text>\n' % (
+            captionstyle,
+            _("Fourier spectrum of the ten bodies as Dirac deltas, normalised 0 to 1"),
+            _("1 = all in one place in that harmonic chart"),
+            _("0 = evenly spread"))
+        beyond = [q for q in petals
+                  if q['concentration'] > harmonicvector_engine.significance_level(len(lons))]
+        out += '<text x="0" y="28" style="%s">%s: %s%d (%.3f) · %s</text>\n' % (
+            captionstyle, _("Dominant harmonic"), _("H"),
+            dominant['harmonic'], dominant['concentration'],
+            (_("past the 1-in-20 level") + ": "
+             + ", ".join("H%d" % (q['harmonic'],) for q in
+                         sorted(beyond, key=lambda q: -q['concentration'])))
+            if beyond else _("none past the 1-in-20 level"))
+
+        #--- rings, and what they are worth ---
+        quiet = min(petals, key=lambda q: q['concentration'])
+        quiet_angle = (quiet['harmonic'] - 1) * 30.0
+        for frac in (0.25, 0.5, 0.75, 1.0):
+            out += '<circle cx="%s" cy="%s" r="%.1f" style="%s"/>\n' % (
+                CX, CY, R * frac, ringstyle)
+            lx, ly = point(quiet_angle, R * frac)
+            out += '<text x="%.1f" y="%.1f" text-anchor="middle" style="%s">%.2f</text>\n' % (
+                lx, ly - 3, smallstyle, frac)
+        for p in petals:
+            x, y = point((p['harmonic'] - 1) * 30.0, R)
+            out += '<line x1="%s" y1="%s" x2="%.1f" y2="%.1f" style="%s"/>\n' % (
+                CX, CY, x, y, spokestyle)
+
+        #Two reference circles, or the dial means nothing: the index runs to
+        #1, but ten bodies dropped at random already average 0.28, and one
+        #chart in twenty reaches 0.55 by chance alone. A petal is only
+        #saying something once it is past the outer of the two.
+        chance = harmonicvector_engine.chance_level(len(lons))
+        signif = harmonicvector_engine.significance_level(len(lons))
+        for radius, dash in ((chance, '3,3'), (signif, '6,3')):
+            out += '<circle cx="%s" cy="%s" r="%.1f" style="stroke:%s; stroke-width:1px; stroke-opacity:.5; stroke-dasharray:%s; fill:none"/>\n' % (
+                CX, CY, R * radius, ink, dash)
+
+        #--- the outline through the twelve tips: the spectrum's shape ---
+        tips = []
+        for p in petals:
+            tips.append(point((p['harmonic'] - 1) * 30.0, R * p['concentration']))
+        out += '<polygon points="%s" style="fill:%s; fill-opacity:.07; stroke:%s; stroke-width:.8px; stroke-opacity:.45"/>\n' % (
+            ' '.join('%.1f,%.1f' % t for t in tips), ink, ink)
+
+        #--- the petals themselves ---
+        #each is a lens: out along its own angle, bulging to either side at
+        #half its length, in the colour the harmogram gives that harmonic
+        HALF = 12.0
+        for p in petals:
+            n = p['harmonic']
+            ang = (n - 1) * 30.0
+            length = R * p['concentration']
+            colour = HARMOGRAM_CURVE_COLORS[n-1]
+            if length > 1.0:
+                tx, ty = point(ang, length)
+                lx, ly = point(ang - HALF, length * 0.55)
+                rx, ry = point(ang + HALF, length * 0.55)
+                out += '<path d="M %s,%s Q %.1f,%.1f %.1f,%.1f Q %.1f,%.1f %s,%s Z" style="fill:%s; fill-opacity:.55; stroke:%s; stroke-width:1.2px"/>\n' % (
+                    CX, CY, lx, ly, tx, ty, rx, ry, CX, CY, colour, colour)
+            #the harmonic's number, just outside the rim
+            lx, ly = point(ang, R + 18)
+            out += '<text x="%.1f" y="%.1f" text-anchor="middle" style="font-size: 13px; font-weight: bold; fill: %s">%d</text>\n' % (
+                lx, ly + 4, colour, n)
+        out += '<circle cx="%s" cy="%s" r="2.5" style="fill:%s"/>\n' % (CX, CY, ink)
+        legend_y = CY + R + 40
+        out += '<line x1="0" y1="%s" x2="24" y2="%s" style="stroke:%s; stroke-width:1px; stroke-opacity:.5; stroke-dasharray:3,3"/>\n' % (
+            legend_y - 4, legend_y - 4, ink)
+        out += '<text x="30" y="%s" style="%s">%s (%.2f) · %s</text>\n' % (
+            legend_y, captionstyle, _("what %d bodies score by chance") % (len(lons),),
+            chance, _("an index below this says nothing"))
+        out += '<line x1="330" y1="%s" x2="354" y2="%s" style="stroke:%s; stroke-width:1px; stroke-opacity:.5; stroke-dasharray:6,3"/>\n' % (
+            legend_y - 4, legend_y - 4, ink)
+        out += '<text x="360" y="%s" style="%s">%s (%.2f)</text>\n' % (
+            legend_y, captionstyle, _("reached by one chart in twenty"), signif)
+
+        #--- the same twelve as numbers ---
+        head = TABLE_TOP - 10
+        out += '<text x="0" y="%s" style="%s">%s</text>\n' % (head, textstyle, _("Harmonic"))
+        out += '<text x="70" y="%s" style="%s">%s</text>\n' % (head, textstyle, _("Index"))
+        out += '<text x="130" y="%s" style="%s">%s</text>\n' % (head, textstyle, _("Amplitude"))
+        out += '<text x="215" y="%s" style="%s">%s</text>\n' % (head, textstyle, _("Points to"))
+        out += '<text x="330" y="%s" style="%s">%s</text>\n' % (head, textstyle, _("Concentration"))
+        out += '<line x1="-15" y1="%s" x2="790" y2="%s" style="stroke:%s; stroke-width:1px; stroke-opacity:.5"/>\n' % (
+            head + 6, head + 6, ink)
+        #strongest first, so the reading order is the finding
+        for k, p in enumerate(sorted(petals, key=lambda q: -q['concentration'])):
+            n = p['harmonic']
+            y = TABLE_TOP + 16 + k * ROW_H
+            colour = HARMOGRAM_CURVE_COLORS[n-1]
+            out += '<text x="0" y="%.1f" style="font-size: 12px; font-weight: bold; fill: %s">H%d</text>\n' % (
+                y, colour, n)
+            out += '<text x="70" y="%.1f" style="%s">%.3f</text>\n' % (y, textstyle, p['concentration'])
+            out += '<text x="130" y="%.1f" style="%s">%.3f</text>\n' % (y, textstyle, p['amplitude'])
+            #one of the h preimages of the phase; the others sit 360/h apart
+            out += '<text x="215" y="%.1f" style="%s">%s</text>\n' % (y, textstyle, sign_of(p['phase']))
+            out += '<rect x="330" y="%.1f" width="%.1f" height="9" style="fill:%s; fill-opacity:.7"/>\n' % (
+                y - 8, 420.0 * p['concentration'], colour)
+        note = TABLE_TOP + 16 + 12 * ROW_H + 18
+        out += '<text x="0" y="%.1f" style="%s">%s</text>\n' % (
+            note, captionstyle,
+            _("\"Points to\" is one of the h places the concentration falls on; the others lie 360/h apart."))
+        out += '</g>'
+
+        td = {}
+        td['paper_color_0']=openAstro.colors["paper_0"]
+        td['paper_color_1']=openAstro.colors["paper_1"]
+        for i in range(len(openAstro.planets)):
+            td['planets_color_%s'%(i)]=openAstro.colors["planet_%s"%(i)]
+        for i in range(12):
+            td['zodiac_color_%s'%(i)]=openAstro.colors["zodiac_icon_%s" %(i)]
+        for i in range(len(openAstro.aspects)):
+            td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
+        td['stringTitle'] = "Harmonic Flower - %s"%(openAstro.name)
+
+        pages = 1
+        pagesY = (1188 * pages)+10
+        if printing:
+            td['svgWidth'] = printing['width']
+            td['svgHeight'] = printing['height']
+            td['viewbox'] = "0 %s 840 1188" %( printing['pagenum']*(1188+10) )
+        else:
+            td['svgWidth'] = 900
+            td['svgHeight'] = (td['svgWidth']/840.0)* pagesY
+            td['viewbox'] = "0 0 840 %s" %( pagesY )
+
+        td['data'] = out
+        td['pagesRect'] = '<rect x="0" y="0" width="840" height="1188" style="fill: %s;" />' % (
+            openAstro.colors['paper_1'],)
+
+        f=open(cfg.xml_svg_table)
+        template=Template(f.read()).substitute(td)
+        f.close()
+        if printing:
+            f=open(cfg.tempfilenametableprint,"w")
+        else:
+            f=open(cfg.tempfilenametable,"w")
+        f.write(template)
+        f.close()
+
+        if printing == None:
+            self.win_THF = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+            self.win_THF.connect("destroy", lambda w: self.win_THF.destroy())
+            self.win_THF.set_title("OpenAstro.org Harmonic Flower")
+            self.win_THF.set_icon_from_file(cfg.iconWindow)
+            self.win_THF.set_size_request(td['svgWidth']+30, 700)
+            self.win_THF.move(50,50)
+            vbox = Gtk.VBox()
+            hbox = Gtk.HBox()
+            name = "harmonic-flower-%s.pdf"%(openAstro.name,)
+            button = Gtk.Button(label=_('Print'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=False,window=self.win_THF,name=name))
+            hbox.pack_start(button,False,False,0)
+            button = Gtk.Button(label=_('Save as PDF'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=True,window=self.win_THF,name=name))
+            hbox.pack_start(button,False,False,0)
+            vbox.pack_start(hbox,False,False,0)
+            draw = drawSVG()
+            draw.setSVG(cfg.tempfilenametable)
+            scrolledwindow = Gtk.ScrolledWindow()
+            scrolledwindow.add(draw)
+            scrolledwindow.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            vbox.pack_start(scrolledwindow,True,True,0)
+            self.win_THF.add(vbox)
+            self.win_THF.show_all()
+        return
 
     def aboutInfo(self, widget):
         dialog=Gtk.Dialog('Info',self.window,0,(_("_OK"), Gtk.ResponseType.DELETE_EVENT))

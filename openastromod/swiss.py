@@ -368,6 +368,21 @@ def cyclic_longitudes(year, month, day, hour=0.0, heliocentric=True,
 	jd = swe.julday(int(year), int(month), int(day), float(hour))
 	return [float(swe.calc_ut(jd, int(b), iflag)[0][0]) for b in bodies]
 
+
+def longitudes_at(jd_ut, bodies, heliocentric=False):
+	"""Ecliptic longitudes of `bodies` at a Julian day.
+
+	The sibling of `cyclic_longitudes` for callers that already hold a
+	Julian day and step it themselves -- a harmogram samples every few
+	minutes across a window, so converting back to a calendar date on each
+	step would be wasted work.
+	"""
+	swe.set_ephe_path(ephe_path)
+	iflag = swe.FLG_SWIEPH
+	if heliocentric:
+		iflag += swe.FLG_HELCTR
+	return [float(swe.calc_ut(float(jd_ut), int(b), iflag)[0][0]) for b in bodies]
+
 class ephData:
 	def __init__(self,year,month,day,hour,geolon,geolat,altitude,planets,zodiac,openastrocfg,houses_override=None):
 		#ephemeris path (default "/usr/share/swisseph:/usr/local/share/swisseph")
