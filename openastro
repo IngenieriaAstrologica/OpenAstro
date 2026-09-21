@@ -125,14 +125,38 @@ GRID_HOUSES_X = 610
 #reproduced; its letters encode a dash pattern nobody has decoded, so the
 #dashes below are ours.
 #
-#Twelve hues 30 deg apart confuse in pairs, so odd harmonics sit at
-#L*=52 and even ones at L*=68: hue separates the group, lightness
-#separates the neighbours, dash separates them again. Chroma is fitted to
-#the sRGB gamut; the narrowest luminance gap between adjacent harmonics is
-#0.105.
+#Twelve hues spaced evenly round the colour wheel is the obvious palette
+#and the wrong one: even hue steps are not even perceptual steps, and the
+#eye separates greens from each other far worse than it separates red from
+#blue, so several pairs came out nearly identical on the plot.
+#
+#These are picked the other way round, by Glasbey's method: walk the sRGB
+#grid and repeatedly take the colour whose CIEDE2000 distance to every
+#colour already taken is largest. White paper and black ink are seeded as
+#already-taken, so no curve can be confused with the background or the
+#text either.
+#
+#Candidates are limited to L* 28-62 and C* >= 30. The upper bound on
+#lightness is doing real work: letting it reach 72 buys a wider spread on
+#paper (23.4) but pays for it with pale curves that vanish at the 1px
+#stroke widths several harmonics carry, and a curve nobody can see is not
+#a distinguishable curve.
+#
+#Dichromacy enters as a constraint rather than as the objective:
+#maximising the worst of normal/deuteranope/protanope vision would have
+#dropped the normal-vision minimum to 12.3, worse than the palette this
+#replaces. A floor of 8 on both dichromacies instead costs nothing.
+#
+#   minimum CIEDE2000 between any two curves   17.6 -> 20.5
+#   ... between consecutive harmonics                  41.1
+#   ... under deuteranopia                      4.4 ->  8.1
+#   ... under protanopia                                8.2
+#
+#The order is then permuted so consecutive harmonics are as far apart as
+#possible, since that is how they are read in the legend and the lanes.
 HARMOGRAM_CURVE_COLORS = (
-    '#ea2d5f', '#ff8860', '#c98500', '#c8cc2f', '#309a1c', '#00bc8b',
-    '#008b89', '#00b5d5', '#0084bb', '#81a3ff', '#a55ad7', '#ff75c5')
+    '#c300ff', '#3c8700', '#f05a87', '#0087b4', '#e13c00', '#2d3c87',
+    '#a5874b', '#875a87', '#694b00', '#00a596', '#870f3c', '#9687e1')
 #stroke-dasharray per harmonic, '' for solid
 HARMOGRAM_CURVE_DASHES = (
     '', '7,3', '2,3', '9,3,2,3', '4,3', '1,3',
@@ -7227,9 +7251,13 @@ class mainWindow:
         for frac in (0.25, 0.5, 0.75, 1.0):
             out += '<circle cx="%s" cy="%s" r="%.1f" style="%s"/>\n' % (
                 CX, CY, R * frac, ringstyle)
-            lx, ly = point(quiet_angle, R * frac)
-            out += '<text x="%.1f" y="%.1f" text-anchor="middle" style="%s">%.2f</text>\n' % (
-                lx, ly - 3, smallstyle, frac)
+            #the rim needs no label: it is 1 by construction, the caption
+            #says so, and a figure there would sit on that spoke's own
+            #harmonic number
+            if frac < 1.0:
+                lx, ly = point(quiet_angle, R * frac)
+                out += '<text x="%.1f" y="%.1f" text-anchor="middle" style="%s">%.2f</text>\n' % (
+                    lx, ly - 3, smallstyle, frac)
         for p in petals:
             x, y = point((p['harmonic'] - 1) * 30.0, R)
             out += '<line x1="%s" y1="%s" x2="%.1f" y2="%.1f" style="%s"/>\n' % (
