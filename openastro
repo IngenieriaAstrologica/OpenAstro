@@ -53,7 +53,7 @@ from gi.repository import Gtk, Gdk, GLib, GObject, Rsvg, cairo
 #internal openastro modules
 sys.path.append("/usr/lib/python3.5/dist-packages") #trying to 'fix' some problems importing openastromod on some distros
 sys.path.append("/usr/lib/python3.5/site-packages") #trying to 'fix' some problems importing openastromod on some distros
-from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine
+from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine, cyclic as cyclic_engine
 
 def _rsvg_render(handle, cr):
     """Render a whole SVG handle at its natural size onto a Cairo context,
@@ -3940,6 +3940,7 @@ class mainWindow:
         tables_menu.append(mi(_('Midpoints'), self.tableMidpoints, 'Midpoints'))
         tables_menu.append(mi(_('Arabic Parts'), self.tableArabicParts, 'ArabicParts'))
         tables_menu.append(mi(_('Profections'), self.tableProfections, 'Profections'))
+        tables_menu.append(mi(_('Cyclic Index'), self.tableCyclicIndex, 'CyclicIndex'))
         menubar.append(tables_top)
 
         #Zoom (radio)
@@ -5044,7 +5045,13 @@ class mainWindow:
             #draw svg for printing
             svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
             svg.set_dpi(900)
-            _rsvg_render(svg, cr)        
+            _rsvg_render(svg, cr)
+        elif(self.tabletype == "cyclic"):
+            self.tableCyclicIndexShow(printing)
+            #draw svg for printing
+            svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
+            svg.set_dpi(900)
+            _rsvg_render(svg, cr)
 
 
     def tableMonthlyTimelineShow(self, printing=None):
@@ -6295,6 +6302,345 @@ class mainWindow:
             vbox.pack_start(scrolledwindow,True,True,0)
             self.win_TFS.add(vbox)
             self.win_TFS.show_all()
+        return
+
+    def tableCyclicIndex(self, widget):
+        #Cyclic index (Gouchon/Barbault): a window of years has to be picked
+        #before anything can be drawn, so this half only asks. The index is
+        #mundane, not natal, but the chart's own year makes a sane default
+        #centre and gets marked on the curve.
+        dialog = Gtk.Dialog(_("Cyclic Index"),
+                     self.window,
+                     0,
+                     (_("_Cancel"), Gtk.ResponseType.REJECT,
+                      _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog.set_destroy_with_parent(True)
+        dialog.connect("destroy", lambda w: dialog.destroy())
+        dialog.set_size_request(240, 240)
+        dialog.move(50,50)
+        first = max(1600, int(openAstro.year) - 50)
+        self.tCIwidget={}
+        dialog.vbox.pack_start(Gtk.Label(label=_('From year')+": "), False, False, 0)
+        self.tCIwidget['F']=Gtk.Entry()
+        self.tCIwidget['F'].set_max_length(4)
+        self.tCIwidget['F'].set_width_chars(4)
+        self.tCIwidget['F'].set_text(str(first))
+        dialog.vbox.pack_start(self.tCIwidget['F'], False, False, 0)
+        dialog.vbox.pack_start(Gtk.Label(label=_('To year')+": "), False, False, 0)
+        self.tCIwidget['T']=Gtk.Entry()
+        self.tCIwidget['T'].set_max_length(4)
+        self.tCIwidget['T'].set_width_chars(4)
+        self.tCIwidget['T'].set_text(str(min(2399, first + 100)))
+        dialog.vbox.pack_start(self.tCIwidget['T'], False, False, 0)
+        self.tCIwidget['H']=Gtk.CheckButton(label=_('Heliocentric'))
+        self.tCIwidget['H'].set_active(True)
+        dialog.vbox.pack_start(self.tCIwidget['H'], False, False, 0)
+        dialog.show_all()
+
+        ret = dialog.run()
+        if ret != Gtk.ResponseType.ACCEPT:
+            dialog.destroy()
+            return
+        try:
+            y_from = int(self.tCIwidget['F'].get_text())
+            y_to = int(self.tCIwidget['T'].get_text())
+        except ValueError:
+            dialog.destroy()
+            md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("From year and To year must be integers"))
+            md.run(); md.destroy()
+            return
+        helio = self.tCIwidget['H'].get_active()
+        #the ephemeris covers a far wider span, but the curve is sampled
+        #month by month and 400 years is already 4800 samples
+        if not (1000 <= y_from <= 2900) or not (y_from < y_to <= 2900) or y_to - y_from > 400:
+            dialog.destroy()
+            md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Years must run 1000..2900, forward, and span at most 400 years"))
+            md.run(); md.destroy()
+            return
+        dialog.destroy()
+        self.tCIentry = {'F': y_from, 'T': y_to, 'H': helio}
+        self.tableCyclicIndexShow()
+        return
+
+    def tableCyclicIndexShow(self, printing=None):
+        #The curve itself: one panel per 25 years, three panels to a page,
+        #then the turning points as a table. Sum of the ten separations of
+        #Jupiter, Saturn, Uranus, Neptune and Pluto -- see
+        #openastromod/cyclic.py for the definition and for why the default
+        #frame is heliocentric.
+        self.tabletype="cyclic"
+        try:
+            y_from = int(self.tCIentry['F'])
+            y_to = int(self.tCIentry['T'])
+            helio = bool(self.tCIentry['H'])
+        except (AttributeError, KeyError, ValueError, TypeError):
+            return
+
+        #sample on the first of every month, plus the closing January so the
+        #last panel's curve reaches its right edge
+        months = (y_to - y_from) * 12 + 1
+        rows = []
+        lon_rows = []
+        for k in range(months):
+            y = y_from + k // 12
+            m = k % 12 + 1
+            lons = ephemeris.cyclic_longitudes(y, m, 1, 0.0, heliocentric=helio)
+            lon_rows.append(lons)
+            rows.append({'date': datetime.date(y, m, 1),
+                         'index': cyclic_engine.index(lons),
+                         'year': y + (m - 1) / 12.0})
+        #a three-year neighbourhood: Barbault's minima are that broad, and a
+        #tighter window would report the ephemeris' own wobble as a turn
+        turns = cyclic_engine.extrema(rows, half_window=36)
+        by_date = dict((r['date'], i) for i, r in enumerate(rows))
+
+        ink = openAstro.colors['paper_0']
+        curve_color = openAstro.planet_color(6)
+        min_color = openAstro.planet_color(4)
+        max_color = openAstro.planet_color(5)
+        textstyle = "font-size: 11px; fill: %s" % (ink,)
+        smallstyle = "font-size: 8px; fill: %s" % (ink,)
+        headerstyle = "font-size: 12px; font-weight: bold; fill: %s" % (ink,)
+        captionstyle = "font-size: 10px; fill: %s" % (ink,)
+        gridstyle = 'stroke:%s; stroke-width: 1px; stroke-opacity:.6; fill:none' % (ink,)
+        finestyle = 'stroke:%s; stroke-width: .5px; stroke-opacity:.25; fill:none' % (ink,)
+        meanstyle = 'stroke:%s; stroke-width: 1px; stroke-opacity:.5; stroke-dasharray:4,3; fill:none' % (ink,)
+
+        #page geometry. The template already wraps $data in translate(20,40),
+        #so y here is (page y - 40) and page p spans y in
+        #[p*PITCH-40, p*PITCH-40+PAGE_H].
+        PAGE_H = 1188.0
+        PITCH = 1198.0
+        #the template prints its own title at page y=30, so the first panel
+        #of a page starts far enough below it to clear the descenders
+        TOP_INSET = 70.0
+        BOTTOM_INSET = 40.0
+        PANEL_SPAN = 25          #years across one panel
+        PANELS_PER_PAGE = 3
+        PANEL_H = 300.0          #height of the plotting box
+        PANEL_BLOCK = 350.0      #caption + box + year labels
+        CAPTION_H = 22.0
+        X0, X1 = 55.0, 790.0
+        SCALE_MAX = cyclic_engine.MAX_INDEX
+
+        def page_y(p):
+            return p * PITCH - 40.0
+
+        def panel_top(p, slot):
+            return page_y(p) + TOP_INSET + slot * PANEL_BLOCK + CAPTION_H
+
+        n_panels = int((y_to - y_from + PANEL_SPAN - 1) // PANEL_SPAN)
+        chart_pages = int((n_panels + PANELS_PER_PAGE - 1) // PANELS_PER_PAGE)
+
+        def value_y(top, v):
+            v = max(0.0, min(SCALE_MAX, float(v)))
+            return top + PANEL_H - (v / SCALE_MAX) * PANEL_H
+
+        out = '<g>'
+        out += '<text x="0" y="%s" style="%s">%s</text>\n' % (
+            page_y(0) + 54, captionstyle,
+            _("Sum of the ten separations of Jupiter, Saturn, Uranus, Neptune and Pluto")
+            + " \xb7 " + (_("heliocentric") if helio else _("geocentric"))
+            + " \xb7 0-%d\xb0, " % (int(SCALE_MAX),)
+            + _("mean") + " %d\xb0" % (int(cyclic_engine.MEAN_INDEX),))
+
+        chart_year = float(openAstro.year) + (float(openAstro.month) - 1) / 12.0
+
+        for panel in range(n_panels):
+            p = panel // PANELS_PER_PAGE
+            slot = panel % PANELS_PER_PAGE
+            top = panel_top(p, slot)
+            bottom = top + PANEL_H
+            a = y_from + panel * PANEL_SPAN
+            b = min(y_to, a + PANEL_SPAN)
+            width = X1 - X0
+
+            def year_x(yr, a=a, b=b, width=width):
+                return X0 + (float(yr) - a) / float(b - a) * width
+
+            #caption
+            out += '<text x="%s" y="%s" style="%s">%s %d - %d</text>\n' % (
+                X0, top - 8, headerstyle, _("Cyclic index"), a, b)
+            #horizontal grid: every 180 degrees, one pair's worth
+            v = 0
+            while v <= int(SCALE_MAX):
+                gy = value_y(top, v)
+                out += '<line x1="%s" y1="%s" x2="%s" y2="%s" style="%s"/>\n' % (
+                    X0, gy, X1, gy, finestyle if v % 360 else gridstyle)
+                out += '<text x="%s" y="%s" text-anchor="end" style="%s">%d</text>\n' % (
+                    X0 - 6, gy + 3, smallstyle, v)
+                v += 180
+            #the random-spread mean, so a reader sees which side of it we are
+            my = value_y(top, cyclic_engine.MEAN_INDEX)
+            out += '<line x1="%s" y1="%s" x2="%s" y2="%s" style="%s"/>\n' % (X0, my, X1, my, meanstyle)
+            #vertical grid: a hairline every year, a label every five
+            for yy in range(a, b + 1):
+                gx = year_x(yy)
+                out += '<line x1="%s" y1="%s" x2="%s" y2="%s" style="%s"/>\n' % (
+                    gx, top, gx, bottom, gridstyle if yy % 5 == 0 else finestyle)
+                if yy % 5 == 0:
+                    out += '<text x="%s" y="%s" text-anchor="middle" style="%s">%d</text>\n' % (
+                        gx, bottom + 14, smallstyle, yy)
+            #box
+            out += '<rect x="%s" y="%s" width="%s" height="%s" style="%s"/>\n' % (
+                X0, top, width, PANEL_H, gridstyle)
+            #the chart's own moment
+            if a <= chart_year <= b:
+                cx = year_x(chart_year)
+                out += '<line x1="%s" y1="%s" x2="%s" y2="%s" style="stroke:%s; stroke-width:1px; stroke-dasharray:3,2; fill:none"/>\n' % (
+                    cx, top, cx, bottom, max_color)
+            #the curve
+            pts = []
+            for r in rows:
+                if a <= r['year'] <= b:
+                    pts.append('%.2f,%.2f' % (year_x(r['year']), value_y(top, r['index'])))
+            if pts:
+                out += '<polyline points="%s" style="fill:none; stroke:%s; stroke-width:1.6px; stroke-linejoin:round"/>\n' % (
+                    ' '.join(pts), curve_color)
+            #turning points, labelled inside the box
+            for t in turns:
+                yr = rows[by_date[t['date']]]['year']
+                if not (a <= yr <= b):
+                    continue
+                tx = year_x(yr)
+                ty = value_y(top, t['index'])
+                color = min_color if t['kind'] == 'min' else max_color
+                out += '<circle cx="%s" cy="%s" r="2.6" style="fill:%s; stroke:none"/>\n' % (tx, ty, color)
+                lx = max(X0 + 34.0, min(X1 - 34.0, tx))
+                #label under a low and over a high, flipped when the point
+                #sits so close to an edge that the label would land on the
+                #box border or on the curve itself
+                if t['kind'] == 'min':
+                    ly = ty - 7 if ty + 13 > bottom - 4 else ty + 13
+                else:
+                    ly = ty + 13 if ty - 7 < top + 12 else ty - 7
+                ly = max(top + 11, min(bottom - 5, ly))
+                #painted with a paper-coloured halo (the same paint-order
+                #trick the wheel uses for degree numbers) so a label that has
+                #to sit on the curve stays readable
+                out += '<text x="%s" y="%s" text-anchor="middle" style="font-size: 8px; fill: %s; stroke: %s; stroke-width: 2.4px; paint-order: stroke">%s  %d</text>\n' % (
+                    lx, ly, color, openAstro.colors['paper_1'],
+                    t['date'].strftime('%Y-%m'), int(round(t['index'])))
+
+        #---- turning points, as a table on its own page(s)
+        ROW_H = 22.0
+        COLS = ((0, _("Date")), (95, _("Turn")), (160, _("Index")), (235, _("of max")),
+                (300, _("Closest pair")), (545, _("Widest pair")))
+
+        def label(i):
+            try:
+                return openAstro.planets[i]['label']
+            except (IndexError, KeyError):
+                return str(i)
+
+        def headers(y):
+            h = ''
+            for cx, text in COLS:
+                h += '<text x="%s" y="%s" style="%s">%s</text>\n' % (cx, y, headerstyle, text)
+            return h
+
+        page = chart_pages
+        y = page_y(page) + TOP_INSET + 20.0
+        limit = page_y(page) + PAGE_H - BOTTOM_INSET
+        out += '<text x="0" y="%s" style="%s">%s</text>\n' % (
+            y - 24, headerstyle, _("Turning points of the curve"))
+        out += headers(y)
+        if not turns:
+            y += ROW_H
+            out += '<text x="0" y="%s" style="%s">%s</text>\n' % (
+                y, textstyle, _("No turning point inside this window"))
+        for t in turns:
+            y += ROW_H
+            if y > limit:
+                page += 1
+                y = page_y(page) + TOP_INSET + 20.0
+                limit = page_y(page) + PAGE_H - BOTTOM_INSET
+                out += headers(y)
+                y += ROW_H
+            i = by_date[t['date']]
+            seps = cyclic_engine.separations(lon_rows[i], cyclic_engine.SLOW_PLANETS)
+            close = min(seps, key=lambda s: s[2])
+            wide = max(seps, key=lambda s: s[2])
+            color = min_color if t['kind'] == 'min' else max_color
+            out += '<rect x="-15" y="%s" width="805" height="%s" style="%s"/>\n' % (
+                y - 15, ROW_H - 4, gridstyle)
+            out += '<text x="0" y="%s" style="%s">%s</text>\n' % (
+                y, textstyle, t['date'].strftime('%Y-%m'))
+            out += '<text x="95" y="%s" style="font-size: 11px; fill: %s">%s</text>\n' % (
+                y, color, _("low") if t['kind'] == 'min' else _("high"))
+            out += '<text x="160" y="%s" style="%s">%.1f\xb0</text>\n' % (y, textstyle, t['index'])
+            out += '<text x="235" y="%s" style="%s">%d%%</text>\n' % (
+                y, textstyle, int(round(100.0 * t['index'] / SCALE_MAX)))
+            out += '<text x="300" y="%s" style="%s">%s - %s  %.1f\xb0</text>\n' % (
+                y, textstyle, label(close[0]), label(close[1]), close[2])
+            out += '<text x="545" y="%s" style="%s">%s - %s  %.1f\xb0</text>\n' % (
+                y, textstyle, label(wide[0]), label(wide[1]), wide[2])
+        out += "</g>"
+        pages = page + 1
+
+        td = {}
+        td['paper_color_0']=openAstro.colors["paper_0"]
+        td['paper_color_1']=openAstro.colors["paper_1"]
+        for i in range(len(openAstro.planets)):
+            td['planets_color_%s'%(i)]=openAstro.colors["planet_%s"%(i)]
+        for i in range(12):
+            td['zodiac_color_%s'%(i)]=openAstro.colors["zodiac_icon_%s" %(i)]
+        for i in range(len(openAstro.aspects)):
+            td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
+        td['stringTitle'] = "Cyclic index %s-%s (Gouchon/Barbault)"%(y_from,y_to)
+
+        pagesY = (1188 * pages)+10
+        if printing:
+            td['svgWidth'] = printing['width']
+            td['svgHeight'] = printing['height']
+            td['viewbox'] = "0 %s 840 1188" %( printing['pagenum']*(1188+10) )
+        else:
+            td['svgWidth'] = 1050
+            td['svgHeight'] = (td['svgWidth']/840.0)* pagesY
+            td['viewbox'] = "0 0 840 %s" %( pagesY )
+
+        td['data'] = out
+        td['pagesRect'] = ''.join(
+            '<rect x="0" y="%s" width="840" height="1188" style="fill: %s;" />' % (
+                p * (1188 + 10), openAstro.colors['paper_1'])
+            for p in range(pages))
+
+        f=open(cfg.xml_svg_table)
+        template=Template(f.read()).substitute(td)
+        f.close()
+        if printing:
+            f=open(cfg.tempfilenametableprint,"w")
+        else:
+            f=open(cfg.tempfilenametable,"w")
+        f.write(template)
+        f.close()
+
+        if printing == None:
+            self.win_TCI = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+            self.win_TCI.connect("destroy", lambda w: self.win_TCI.destroy())
+            self.win_TCI.set_title("OpenAstro.org Cyclic Index")
+            self.win_TCI.set_icon_from_file(cfg.iconWindow)
+            self.win_TCI.set_size_request(td['svgWidth']+30, 700)
+            self.win_TCI.move(50,50)
+            vbox = Gtk.VBox()
+            hbox = Gtk.HBox()
+            button = Gtk.Button(label=_('Print'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=False,window=self.win_TCI,name="cyclic-index-%s-%s.pdf"%(y_from,y_to)))
+            hbox.pack_start(button,False,False,0)
+            button = Gtk.Button(label=_('Save as PDF'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=True,window=self.win_TCI,name="cyclic-index-%s-%s.pdf"%(y_from,y_to)))
+            hbox.pack_start(button,False,False,0)
+            vbox.pack_start(hbox,False,False,0)
+            draw = drawSVG()
+            draw.setSVG(cfg.tempfilenametable)
+            scrolledwindow = Gtk.ScrolledWindow()
+            scrolledwindow.add(draw)
+            scrolledwindow.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            vbox.pack_start(scrolledwindow,True,True,0)
+            self.win_TCI.add(vbox)
+            self.win_TCI.show_all()
         return
 
 

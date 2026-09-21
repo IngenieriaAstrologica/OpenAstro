@@ -344,6 +344,30 @@ def calc_antiscion(lon, ayan=0.0):
 	cant = normalize_dodec(ant + 180.0)
 	return ant, cant
 
+# Bodies of the Gouchon/Barbault cyclic index: Jupiter, Saturn, Uranus,
+# Neptune, Pluto. Same numbers in Swiss Ephemeris and in OpenAstro's planet
+# list, so one tuple serves both (see openastromod.cyclic).
+CYCLIC_BODIES = (5, 6, 7, 8, 9)
+
+def cyclic_longitudes(year, month, day, hour=0.0, heliocentric=True,
+		bodies=CYCLIC_BODIES):
+	"""Ecliptic longitudes of the slow planets, for the cyclic index.
+
+	A deliberately thin call: no houses, no speeds, no 23-body loop, because
+	the index is sampled hundreds of times over a century and ephData would
+	compute a whole chart for each sample.
+
+	`heliocentric` is the default because that is the frame Barbault's curve
+	is drawn in; see the openastromod.cyclic docstring for why, and pass
+	False for the geocentric variant.
+	"""
+	swe.set_ephe_path(ephe_path)
+	iflag = swe.FLG_SWIEPH
+	if heliocentric:
+		iflag += swe.FLG_HELCTR
+	jd = swe.julday(int(year), int(month), int(day), float(hour))
+	return [float(swe.calc_ut(jd, int(b), iflag)[0][0]) for b in bodies]
+
 class ephData:
 	def __init__(self,year,month,day,hour,geolon,geolat,altitude,planets,zodiac,openastrocfg,houses_override=None):
 		#ephemeris path (default "/usr/share/swisseph:/usr/local/share/swisseph")
