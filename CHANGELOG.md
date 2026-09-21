@@ -2,6 +2,53 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: Cyclic Index — 2026-09-21
+
+### Change
+New **Tables → Cyclic Index**: the Gouchon/Barbault curve, mundane
+astrology's single number for a date. For every sampled date the ten
+angular separations among Jupiter, Saturn, Uranus, Neptune and Pluto are
+summed; low values mean the slow planets are gathered, high values that
+they are spread. Drawn as a plotted curve over a century, split into
+25-year panels, with a table of turning points naming the closest and
+widest pair at each.
+
+### How it works
+`openastromod/cyclic.py` for the geometry, plus a deliberately thin
+`swiss.cyclic_longitudes()` that fetches only the five longitudes — the
+curve samples hundreds of dates, and `ephData` would build a whole chart
+for each.
+
+**Heliocentric by default, and that is a choice.** Seen from the Sun the
+curve moves only as the planets actually move; seen from the Earth every
+outer planet retrogrades once a year and the sum picks up an annual ripple
+that is an artefact of where the observer stands. The geocentric variant
+remains available.
+
+### Verification
+Three claims were checked independently of the implementation.
+
+**The ceiling is 1080, not 1800.** Ten pairs at 180° would give 1800, but
+five points on a circle cannot all be in opposition at once. A hill-climb
+from 4,000 random starts never exceeded **1080.0000**, and the mean over a
+uniform spread came to 901 against the predicted 900.
+
+**That ceiling is a plateau, not a peak** — a finding that changes how the
+curve is read. Perturbing any planet in the January 2003 configuration by
+one or five degrees left the sum at exactly 1080 in **18 of 20** cases. So
+a reading of "100% of maximum" is saturation, the tops of the curve are
+genuinely flat, and it is the *minima* that carry the information.
+
+**The curve lands where the tradition says it should.** Computed from
+scratch with a separate script: 1983-06 gives 306.4 (28% of maximum, the
+minimum Barbault built his reputation on), 1943-08 gives 562.3, 2022-06
+gives 500.7, and 2003-01 sits on the plateau at 1080.0.
+
+### Files changed
+- `openastromod/cyclic.py` — new engine module
+- `openastromod/swiss.py` — `cyclic_longitudes()`, a thin ephemeris call
+- `openastro` — `tableCyclicIndex`, Tables menu entry, print dispatch
+
 ## Feature: pick the day for a Lunar Return — 2026-09-20
 
 ### Change
