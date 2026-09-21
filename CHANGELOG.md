@@ -2,6 +2,68 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: harmogram engine — 2026-09-21
+
+### Change
+`openastromod/harmogram.py`, the calculation behind the harmograms of Mike
+O'Neill and Miguel García Ferrández: the strength of each of the first
+twelve harmonics, traced as a curve over time. The engine only; the plot
+comes next.
+
+### The technique, and where it was read from
+A harmonic chart of order N multiplies every longitude by N, which turns
+that harmonic's aspect family into conjunctions. "How strong is harmonic N"
+therefore becomes "how many conjunctions does the Nth harmonic chart hold",
+and that is a number one can plot.
+
+Two readings, and the `.DHQ` templates that ship with ARMON name both:
+
+- **Harmonic transits** — the moving sky against a fixed radix. The
+  templates mark it `R:` (receivers, natal) against `T:` (emitters,
+  transiting).
+- **Natal harmogram** — the sky against itself, both sets `T:`. García
+  introduced it because harmonic transits misbehave near the birth moment:
+  every planet is then conjunct its own radical place in *all* the low
+  harmonics, and the curves spike.
+
+**The orb is 360/13 = 27.69231°**, the literal constant in the templates.
+García's own reasoning, per the source: it is the widest orb a conjunction
+can take before reaching into the semisextile's territory at 360/12. Not
+empirical — a mathematical argument.
+
+Conjunctions are counted "weighted by a Gaussian orb". The sources say that
+and no more, giving no constant, so the weighting is parametrised rather
+than guessed: `WEIGHT_AT_ORB` states what a conjunction exactly on the
+boundary is worth and the Gaussian width follows from it.
+
+### Verification
+The source gives numbers, and they are reproduced. With O'Neill's 12° orb
+the article states the transiting Sun stays conjunct its radical place
+"about twelve days in harmonic 1, six in harmonic 2, four in harmonic 3":
+
+| Harmonic | Published | Computed |
+|----------|-----------|----------|
+| 1 | ~12 days | **12.3** |
+| 2 | ~6 days | **6.1** |
+| 3 | ~4 days | **4.1** |
+
+With García's orb the same scaling holds exactly — 28.5, 14.2, 9.4 days,
+which is 1, 1/2 and 1/3 of the first.
+
+The engine also reproduces the artefact that motivated the natal variant:
+at the birth moment harmonic transits reach 17.55 where the natal
+harmogram reads 3.78, the spike being precisely what reading the sky
+against itself removes.
+
+Plus the mechanics: an opposition is a conjunction in harmonic 2, a square
+in harmonic 4, a trine in harmonic 3 and not in 4; the weight is 1 when
+exact, `WEIGHT_AT_ORB` at the boundary, 0 beyond, and monotonic between; a
+16-day window at 36 parts a day gives 577 samples centred on the date.
+
+### Files changed
+- `openastromod/harmogram.py` — new engine module
+- `openastromod/swiss.py` — `longitudes_at()`, a thin call for dense sampling
+
 ## Fix: GTK 2 constants, and dialogs now open on today — 2026-09-21
 
 ### Error dialogs raised instead of showing
