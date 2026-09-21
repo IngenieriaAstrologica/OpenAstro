@@ -53,7 +53,7 @@ from gi.repository import Gtk, Gdk, GLib, GObject, Rsvg, cairo
 #internal openastro modules
 sys.path.append("/usr/lib/python3.5/dist-packages") #trying to 'fix' some problems importing openastromod on some distros
 sys.path.append("/usr/lib/python3.5/site-packages") #trying to 'fix' some problems importing openastromod on some distros
-from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine, cyclic as cyclic_engine
+from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine, transit as transit_engine, cyclic as cyclic_engine
 
 def _rsvg_render(handle, cr):
     """Render a whole SVG handle at its natural size onto a Cairo context,
@@ -1364,7 +1364,10 @@ class openAstroInstance:
         #(mundo contacts by OA equality under the transit pole); the
         #dialog remembers the last choice in astrocfg like the directions one
         self.transit_measure="ecliptic"
-        
+        #transit direction: direct (the sky of the requested moment) or
+        #converse (that moment mirrored about the birth instant)
+        self.transit_converse=False
+
         #Default dpi for svg is set per-handle when the file is loaded (setSVG)
 
         #12 zodiacs
@@ -1770,6 +1773,63 @@ class openAstroInstance:
         measure_tag = primary_engine.MEASURE_TAGS[measure]
         openAstro.charttype="%s (%s-%02d-%02d, %s%s%s)" % (_("Primary Directions"),dt.year,dt.month,dt.day,key,measure_tag,direction)
         openAstro.transit=True
+        return
+
+    def localToTransit(self, dt_local=None, converse=False, measure="ecliptic"):
+        #Transits as the outer wheel: the radix stays in self.* (inner wheel)
+        #and the sky of the requested moment is copied into self.t_* (outer
+        #wheel), which is a plain ephemeris reading -- the only question a
+        #transit poses is *when*.
+        #dt_local is wall-clock time at the home place (None = right now).
+        #converse=True mirrors the elapsed time about the birth instant, so
+        #the heavens run backwards from the nativity; see the rationale in
+        #openastromod/transit.py (primary directions and atacires negate an
+        #arc that is linear in elapsed time, which is the same statement).
+        #measure: ecliptic longitudes or ascensional (mundo) contacts.
+        if measure not in primary_engine.TRANSIT_MEASURE_KEYS:
+            measure = "ecliptic"
+        self.transit_measure = measure
+
+        #the transit is read from the home place, as before
+        self.t_geolon = float(self.home_geolon)
+        self.t_geolat = float(self.home_geolat)
+        timezone_str = zonetab.nearest_tz(self.t_geolat,self.t_geolon,zonetab.timezones())[2]
+
+        if dt_local is None:
+            now = datetime.datetime.now()
+            dt_local = datetime.datetime(now.year,now.month,now.day,now.hour,now.minute,now.second)
+
+        #birth instant in UT, exact: self.hour is decimal UT hours, so build
+        #it with a timedelta instead of rounding through decHour()
+        birth_utc = datetime.datetime(self.year,self.month,self.day) + datetime.timedelta(hours=float(self.hour))
+        sky_utc, sky_local, tz_offset = transit_engine.moment(dt_local, timezone_str, birth_utc, converse)
+
+        #transit data (UT, as the ephemeris wants it)
+        self.t_year = sky_utc.year
+        self.t_month = sky_utc.month
+        self.t_day = sky_utc.day
+        self.t_hour = self.decHourJoin(sky_utc.hour,sky_utc.minute,sky_utc.second)
+        self.t_timezone = tz_offset
+        self.t_altitude = 25
+        self.transit_converse = converse
+        self.transit_dt_local = dt_local
+
+        #a bi-wheel (natal inside, transit outside), so enable Chart View;
+        #"Outer only" renders the transit moment alone via TransitOuter
+        self.solar_active = True
+        self.biwheel_single = "TransitOuter"
+        self.type = "Transit"
+        measure_tag = primary_engine.TRANSIT_MEASURE_TAGS[measure]
+        if converse:
+            #name both moments: the one asked for and the sky actually drawn
+            direction = "%s %04d-%02d-%02d %02d:%02d" % (_(", converse, sky at"),
+                sky_local.year,sky_local.month,sky_local.day,sky_local.hour,sky_local.minute)
+        else:
+            direction = ""
+        self.charttype = "%s (%s-%02d-%02d %02d:%02d%s%s)" % (self.label["transit"],
+            dt_local.year,dt_local.month,dt_local.day,dt_local.hour,dt_local.minute,
+            direction,measure_tag)
+        self.transit = True
         return
 
     def split_sign_degree(self, values):
@@ -4277,32 +4337,89 @@ class mainWindow:
         self.draw.setSVG(self.tempfilename)
             
     def specialTransit(self, widget):
-        #dialog asks the measure (ecliptic longitudes or ascensional mundo
-        #contacts), then draws the now-moment bi-wheel: radix inside,
-        #transit outside. Last used measure is remembered in astrocfg.
+        #dialog asks the date and time of the transit, the direction
+        #(direct or converse) and the measure (ecliptic longitudes or
+        #ascensional mundo contacts), then draws the bi-wheel: radix
+        #inside, transit outside. Last used values are kept in astrocfg;
+        #"Now" puts the current moment back in the fields.
         self.win_ST = Gtk.Dialog(parent=self.window)
         self.win_ST.set_icon_from_file(cfg.iconWindow)
         self.win_ST.set_title(_("Transits"))
         self.win_ST.connect("delete_event", lambda w,e: self.win_ST.destroy())
         self.win_ST.move(150,150)
         self.win_ST.set_border_width(5)
-        self.win_ST.set_size_request(320,120)
+        self.win_ST.set_size_request(360,260)
 
-        table = Gtk.Table(n_rows=1, n_columns=1, homogeneous=False)
+        table = Gtk.Table(n_rows=1, n_columns=4, homogeneous=False)
         table.set_border_width(10)
+        table.attach(Gtk.Label(label=_("Select date for Transits")+":"), 0, 1, 0, 1, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        entry={}
+        now = datetime.datetime.now()
+
+        #last used values are remembered in astrocfg (None on first use)
+        def last(key, default):
+            val = db.getAstrocfg(key)
+            return val if val is not None else default
+
+        #date and time of the transit, as wall-clock time at the home place
+        fields = (('Y', 'Year', 4, '%d'%(now.year)),
+                  ('M', 'Month', 2, '%02d'%(now.month)),
+                  ('D', 'Day', 2, '%02d'%(now.day)),
+                  ('h', 'Hour', 2, '%02d'%(now.hour)),
+                  ('m', 'Min', 2, '%02d'%(now.minute)))
+        hbox = Gtk.HBox(spacing=4)
+        for k, lbl, ln, default in fields[:3]:
+            hbox.pack_start(Gtk.Label(label=_(lbl)+": "), False, False, 0)
+            entry[k]=Gtk.Entry()
+            entry[k].set_max_length(ln)
+            entry[k].set_width_chars(ln)
+            entry[k].set_text(last('transit_'+k, default))
+            hbox.pack_start(entry[k], False, False, 0)
+        table.attach(hbox,0,1,1,2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        hbox = Gtk.HBox(spacing=4)
+        for k, lbl, ln, default in fields[3:]:
+            hbox.pack_start(Gtk.Label(label=_(lbl)+": "), False, False, 0)
+            entry[k]=Gtk.Entry()
+            entry[k].set_max_length(ln)
+            entry[k].set_width_chars(ln)
+            entry[k].set_text(last('transit_'+k, default))
+            hbox.pack_start(entry[k], False, False, 0)
+        #the commonest transit is the one happening right now, and that used
+        #to be the only one this dialog could draw: keep it one click away
+        nowbutton = Gtk.Button(label=_("Now"))
+        def set_now(*_a):
+            stamp = datetime.datetime.now()
+            for k, val in (('Y', '%d'%(stamp.year)), ('M', '%02d'%(stamp.month)),
+                           ('D', '%02d'%(stamp.day)), ('h', '%02d'%(stamp.hour)),
+                           ('m', '%02d'%(stamp.minute))):
+                entry[k].set_text(val)
+        nowbutton.connect("clicked", set_now)
+        hbox.pack_start(nowbutton, False, False, 0)
+        table.attach(hbox,0,1,2,3, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        #direct or converse: converse mirrors the elapsed time about the
+        #birth instant, so the sky runs backwards over the radix
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Direction')+": "), False, False, 0)
+        entry['R']=Gtk.ComboBoxText.new()
+        entry['R'].append_text(_("Direct"))
+        entry['R'].append_text(_("Converse"))
+        entry['R'].set_active(1 if last('transit_dir', '0') == '1' else 0)
+        hbox.pack_start(entry['R'], False, False, 0)
+        table.attach(hbox,0,1,3,4, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
         hbox = Gtk.HBox(spacing=4)
         hbox.pack_start(Gtk.Label(label=_('Measure')+": "), False, False, 0)
         self.transit_measure_list = ["ecliptic", "ascensional"]
-        entry = Gtk.ComboBoxText.new()
-        entry.append_text(_("Ecliptic"))
-        entry.append_text(_("Ascensional (mundo)"))
-        last_measure = db.getAstrocfg('transit_measure')
-        if last_measure not in self.transit_measure_list:
-            last_measure = "ecliptic"
-        entry.set_active(self.transit_measure_list.index(last_measure))
-        hbox.pack_start(entry, False, False, 0)
-        table.attach(hbox,0,1,0,1, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+        entry['S'] = Gtk.ComboBoxText.new()
+        entry['S'].append_text(_("Ecliptic"))
+        entry['S'].append_text(_("Ascensional (mundo)"))
+        last_measure = last('transit_measure', "ecliptic")
+        entry['S'].set_active(self.transit_measure_list.index(last_measure) if last_measure in self.transit_measure_list else 0)
+        hbox.pack_start(entry['S'], False, False, 0)
+        table.attach(hbox,0,1,4,5, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
         self.win_ST.vbox.pack_start(table, True, True, 0)
 
@@ -4320,46 +4437,41 @@ class mainWindow:
         return
 
     def specialTransitSubmit(self, widget, entry):
-        measure = self.transit_measure_list[entry.get_active()]
+        #validate before anything is stored or drawn: a bad date must leave
+        #the dialog open with the values still in it
+        try:
+            dt_local = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),
+                int(entry['D'].get_text()),int(entry['h'].get_text()),int(entry['m'].get_text()))
+        except ValueError:
+            md = Gtk.MessageDialog(self.win_ST,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Enter a valid date and time (Y-M-D h:m)"))
+            md.run(); md.destroy()
+            return
+        if not (1000 <= dt_local.year <= 9999):
+            md = Gtk.MessageDialog(self.win_ST,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Year must be 1000..9999"))
+            md.run(); md.destroy()
+            return
+        converse = entry['R'].get_active() == 1
+        measure = self.transit_measure_list[entry['S'].get_active()]
         if measure not in primary_engine.TRANSIT_MEASURE_KEYS:
             measure = "ecliptic"
-        #remember last used measure in astrocfg for the next run
+        #remember last used parameters in astrocfg for the next run
+        db.setAstrocfg('transit_Y', '%d'%(dt_local.year))
+        db.setAstrocfg('transit_M', '%02d'%(dt_local.month))
+        db.setAstrocfg('transit_D', '%02d'%(dt_local.day))
+        db.setAstrocfg('transit_h', '%02d'%(dt_local.hour))
+        db.setAstrocfg('transit_m', '%02d'%(dt_local.minute))
+        db.setAstrocfg('transit_dir', '1' if converse else '0')
         db.setAstrocfg('transit_measure', measure)
-        openAstro.transit_measure = measure
+        openAstro.localToTransit(dt_local, converse, measure)
         self.win_ST.destroy()
-        openAstro.type="Transit"
-        #Transit Chart is a bi-wheel (natal inside, transit outside),
-        #so enable Chart View; "Outer only" renders the transit
-        #moment alone via the TransitOuter type
-        openAstro.solar_active=True
-        openAstro.biwheel_single="TransitOuter"
-        openAstro.t_geolon=float(openAstro.home_geolon)
-        openAstro.t_geolat=float(openAstro.home_geolat)
-
-        now = datetime.datetime.now()
-        timezone_str = zonetab.nearest_tz(openAstro.t_geolat,openAstro.t_geolon,zonetab.timezones())[2]
-        #aware datetime object
-        dt_input = datetime.datetime(now.year, now.month, now.day, now.hour, now.minute, now.second)
-        dt = dt_input.replace(tzinfo=ZoneInfo(timezone_str), fold=1)
-        #naive utc datetime object
-        dt_utc = dt.replace(tzinfo=None) - dt.utcoffset()
-        #transit data
-        openAstro.t_year=dt_utc.year
-        openAstro.t_month=dt_utc.month
-        openAstro.t_day=dt_utc.day
-        openAstro.t_hour=openAstro.decHourJoin(dt_utc.hour,dt_utc.minute,dt_utc.second)
-        openAstro.t_timezone=openAstro.offsetToTz(dt.utcoffset())
-        openAstro.t_altitude=25
-
-        #make svg with transit
-        measure_tag = primary_engine.TRANSIT_MEASURE_TAGS[measure]
-        openAstro.charttype="%s (%s-%02d-%02d %02d:%02d%s)" % (openAstro.label["transit"],dt.year,dt.month,dt.day,dt.hour,dt.minute,measure_tag)
-        openAstro.transit=True
         #a fresh transit chart defaults to the bi-wheel view
         self._resetChartViewBoth()
         openAstro.makeSVG()
         self.draw.queue_draw()
-        self.draw.setSVG(self.tempfilename) 
+        self.draw.setSVG(self.tempfilename)
+        return
 
     def specialSolar(self, widget):
         # create a new window
