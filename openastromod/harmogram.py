@@ -47,6 +47,12 @@ ORB = 360.0 / 13.0
 #Harmonics a harmogram traces, as in ARMON's own templates.
 HARMONICS = tuple(range(1, 13))
 
+#The ten bodies ARMON's templates carry, as Swiss Ephemeris numbers, and
+#the same ten as OpenAstro indexes them. Sun through Pluto: the `.DHQ`
+#body lists hold exactly ten characters.
+DEFAULT_BODIES = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+RADIX_INDICES = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+
 #What a conjunction sitting exactly on the orb boundary counts for. The
 #Gaussian is cut off there, so this also sets how abruptly it ends: at 5%
 #the discontinuity is too small to show in a plotted curve.
