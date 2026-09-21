@@ -2,6 +2,39 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Fix: GTK 2 constants, and dialogs now open on today — 2026-09-21
+
+### Error dialogs raised instead of showing
+`Gtk.MESSAGE_ERROR`, `Gtk.BUTTONS_CLOSE` and a mistyped `Gtk.ButtonS_CLOSE`
+survived the GTK 3 port. **None of the three exists in GTK 3**, checked
+against the live library, so each would raise `AttributeError` at the
+moment it was asked to report a problem — the Monthly Timeline's two
+validation messages and the print-failure dialog. They are now
+`Gtk.MessageType.ERROR` and `Gtk.ButtonsType.CLOSE`. Five uses across
+three call sites; none remain.
+
+### Dialogs open on the current date and time
+Transits, Lunar Return, Primary Directions and Atacir reopened on
+whatever date was last used, which is rarely the one wanted — the common
+case is *now*. All six date-taking dialogs now open on the current moment.
+Solar Return and Secondary Progressions already did.
+
+The distinction that matters: **dates reset, technique settings do not.**
+Cycle, time key, measure and direct/converse are still remembered, because
+those express how someone works rather than what they are looking at
+today. The date fields no longer write to `astrocfg` either, since nothing
+reads them back, and one `last()` helper left with no callers went with
+them.
+
+### Verification
+Every one of the six dialogs checked programmatically: none reads a date
+from `astrocfg`, all six seed from the current moment, and no date field
+is written back. The nine technique settings that should persist still do.
+
+### Files changed
+- `openastro` — the three message dialogs, date seeding in `specialTransit`,
+  `specialLunar`, `specialDirected` and `specialAtacir`
+
 ## Feature: import Kepler/CPA natal files — 2026-09-21
 
 ### Change

@@ -4374,7 +4374,7 @@ class mainWindow:
             entry[k]=Gtk.Entry()
             entry[k].set_max_length(ln)
             entry[k].set_width_chars(ln)
-            entry[k].set_text(last('transit_'+k, default))
+            entry[k].set_text(default)
             hbox.pack_start(entry[k], False, False, 0)
         table.attach(hbox,0,1,1,2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
@@ -4384,7 +4384,7 @@ class mainWindow:
             entry[k]=Gtk.Entry()
             entry[k].set_max_length(ln)
             entry[k].set_width_chars(ln)
-            entry[k].set_text(last('transit_'+k, default))
+            entry[k].set_text(default)
             hbox.pack_start(entry[k], False, False, 0)
         #the commonest transit is the one happening right now, and that used
         #to be the only one this dialog could draw: keep it one click away
@@ -4457,11 +4457,6 @@ class mainWindow:
         if measure not in primary_engine.TRANSIT_MEASURE_KEYS:
             measure = "ecliptic"
         #remember last used parameters in astrocfg for the next run
-        db.setAstrocfg('transit_Y', '%d'%(dt_local.year))
-        db.setAstrocfg('transit_M', '%02d'%(dt_local.month))
-        db.setAstrocfg('transit_D', '%02d'%(dt_local.day))
-        db.setAstrocfg('transit_h', '%02d'%(dt_local.hour))
-        db.setAstrocfg('transit_m', '%02d'%(dt_local.minute))
         db.setAstrocfg('transit_dir', '1' if converse else '0')
         db.setAstrocfg('transit_measure', measure)
         openAstro.localToTransit(dt_local, converse, measure)
@@ -4540,23 +4535,20 @@ class mainWindow:
         now = datetime.datetime.now()
         table.attach(Gtk.Label(label=_("Nearest Lunar Return to this date")+":"), 0, 3, 0, 1, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
         entry={}
-        def last(key, default):
-            val = db.getAstrocfg(key)
-            return val if val is not None else default
         entry['Y']=Gtk.Entry()
         entry['Y'].set_max_length(4)
         entry['Y'].set_width_chars(4)
-        entry['Y'].set_text(last('lunar_Y', str(now.year)))
+        entry['Y'].set_text(str(now.year))
         table.attach(entry['Y'], 0, 1, 1, 2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
         entry['M']=Gtk.Entry()
         entry['M'].set_max_length(2)
         entry['M'].set_width_chars(2)
-        entry['M'].set_text(last('lunar_M', '%02d'%(now.month)))
+        entry['M'].set_text('%02d'%(now.month))
         table.attach(entry['M'], 1, 2, 1, 2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
         entry['D']=Gtk.Entry()
         entry['D'].set_max_length(2)
         entry['D'].set_width_chars(2)
-        entry['D'].set_text(last('lunar_D', '%02d'%(now.day)))
+        entry['D'].set_text('%02d'%(now.day))
         table.attach(entry['D'], 2, 3, 1, 2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
 
         #make the ui layout with ok button
@@ -4587,9 +4579,6 @@ class mainWindow:
             return
         if not (1 <= intmonth <= 12) or not (1 <= intday <= 31):
             return
-        db.setAstrocfg('lunar_Y', entry['Y'].get_text())
-        db.setAstrocfg('lunar_M', entry['M'].get_text())
-        db.setAstrocfg('lunar_D', entry['D'].get_text())
         openAstro.localToLunar(intyear, intmonth, intday)
         self.win_SL.destroy()
         #a fresh lunar return defaults to the bi-wheel view
@@ -4769,19 +4758,19 @@ class mainWindow:
         entry['Y']=Gtk.Entry()
         entry['Y'].set_max_length(4)
         entry['Y'].set_width_chars(4)
-        entry['Y'].set_text(last('directed_Y', str(now.year)))
+        entry['Y'].set_text(str(now.year))
         hbox.pack_start(entry['Y'], False, False, 0)
         hbox.pack_start(Gtk.Label(label=_('Month')+": "), False, False, 0)
         entry['M']=Gtk.Entry()
         entry['M'].set_max_length(2)
         entry['M'].set_width_chars(2)
-        entry['M'].set_text(last('directed_M', '%02d'%(now.month)))
+        entry['M'].set_text('%02d'%(now.month))
         hbox.pack_start(entry['M'], False, False, 0)
         hbox.pack_start(Gtk.Label(label=_('Day')+": "), False, False, 0)
         entry['D']=Gtk.Entry()
         entry['D'].set_max_length(2)
         entry['D'].set_width_chars(2)
-        entry['D'].set_text(last('directed_D', str(now.day)))
+        entry['D'].set_text(str(now.day))
         hbox.pack_start(entry['D'], False, False, 0)
         table.attach(hbox,0,1,1,2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
@@ -4790,13 +4779,13 @@ class mainWindow:
         entry['h']=Gtk.Entry()
         entry['h'].set_max_length(2)
         entry['h'].set_width_chars(2)
-        entry['h'].set_text(last('directed_h', '%02d'%(now.hour)))
+        entry['h'].set_text('%02d'%(now.hour))
         hbox.pack_start(entry['h'], False, False, 0)
         hbox.pack_start(Gtk.Label(label=_('Min')+": "), False, False, 0)
         entry['m']=Gtk.Entry()
         entry['m'].set_max_length(2)
         entry['m'].set_width_chars(2)
-        entry['m'].set_text(last('directed_m', '%02d'%(now.minute)))
+        entry['m'].set_text('%02d'%(now.minute))
         hbox.pack_start(entry['m'], False, False, 0)
         table.attach(hbox,0,1,2,3, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
@@ -4864,11 +4853,6 @@ class mainWindow:
         converse = entry['R'].get_active() == 1
         measure = self.directed_measure_list[entry['S'].get_active()]
         #remember last used parameters in astrocfg for the next run
-        db.setAstrocfg('directed_Y', entry['Y'].get_text())
-        db.setAstrocfg('directed_M', entry['M'].get_text())
-        db.setAstrocfg('directed_D', entry['D'].get_text())
-        db.setAstrocfg('directed_h', entry['h'].get_text())
-        db.setAstrocfg('directed_m', entry['m'].get_text())
         db.setAstrocfg('directed_key', key)
         db.setAstrocfg('directed_dir', '1' if converse else '0')
         db.setAstrocfg('directed_measure', measure)
@@ -4911,7 +4895,7 @@ class mainWindow:
             entry[k]=Gtk.Entry()
             entry[k].set_max_length(ln)
             entry[k].set_width_chars(ln)
-            entry[k].set_text(last('atacir_'+k, default))
+            entry[k].set_text(default)
             hbox.pack_start(entry[k], False, False, 0)
         table.attach(hbox,0,1,1,2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
@@ -4993,9 +4977,6 @@ class mainWindow:
         converse = entry['R'].get_active() == 1
         key = self.atacir_key_list[entry['K'].get_active()]
         #remember last used parameters in astrocfg for the next run
-        db.setAstrocfg('atacir_Y', entry['Y'].get_text())
-        db.setAstrocfg('atacir_M', entry['M'].get_text())
-        db.setAstrocfg('atacir_D', entry['D'].get_text())
         db.setAstrocfg('atacir_cycle', str(cycle))
         db.setAstrocfg('atacir_dir', '1' if converse else '0')
         db.setAstrocfg('atacir_key', key)
@@ -5042,14 +5023,14 @@ class mainWindow:
                 m = int(self.tMTentry['M'])
             except ValueError:
                 dialog.destroy()
-                md = Gtk.MessageDialog(self.window,0,Gtk.MESSAGE_ERROR,
-                    Gtk.BUTTONS_CLOSE,_("Year and Month must be integers"))
+                md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                    Gtk.ButtonsType.CLOSE,_("Year and Month must be integers"))
                 md.run(); md.destroy()
                 return
             if not (1 <= m <= 12) or not (1000 <= y <= 9999):
                 dialog.destroy()
-                md = Gtk.MessageDialog(self.window,0,Gtk.MESSAGE_ERROR,
-                    Gtk.BUTTONS_CLOSE,_("Month must be 1..12 and Year 1000..9999"))
+                md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                    Gtk.ButtonsType.CLOSE,_("Month must be 1..12 and Year 1000..9999"))
                 md.run(); md.destroy()
                 return
             dialog.destroy()
@@ -5091,7 +5072,7 @@ class mainWindow:
             res = print_op.run(Gtk.PrintOperationAction.PRINT_DIALOG, window)       
 
         if res == Gtk.PrintOperationResult.ERROR:
-            error_dialog = Gtk.MessageDialog(window,0,Gtk.MESSAGE_ERROR,Gtk.ButtonS_CLOSE,"Error printing:\n")
+            error_dialog = Gtk.MessageDialog(window,0,Gtk.MessageType.ERROR,Gtk.ButtonsType.CLOSE,"Error printing:\n")
             error_dialog.set_destroy_with_parent(True)
             error_dialog.connect("response", lambda w,id: w.destroy())
             error_dialog.show()
