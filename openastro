@@ -68,8 +68,14 @@ def _rsvg_render(handle, cr):
 #debug
 #LOCAL=False
 LOCAL=True
-#DEBUG=False
-DEBUG=True
+#Off by default. dprint() also turns on with --debug on the command line, so
+#nothing is lost by this -- but left on, the ~86 dprint() calls write to
+#stdout on every ordinary run, and several of them carry chart data: the
+#birth latitude and longitude and location (drawChart), the UTC-to-local
+#conversion (utcToLocal) and the user's own home location (setHomeLocation).
+#This repository takes care to keep that data out of git; printing it to the
+#console on every run gave it back.
+DEBUG=False
 VERSION='1.1.59'
 
 #Wheel drawing: zodiac sign glyph scale and the alpha of each painted layer.
