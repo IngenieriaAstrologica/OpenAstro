@@ -39,6 +39,21 @@ the file you are correcting.
 - `nota_añadir_a_todo.md` is untracked and its contents are already in
   `TODO.md`. Ask before deleting it; it is the user's own note.
 
+## Before you start: check you can actually run the suite
+
+    ls tests/run.sh || echo "NO SUITE HERE"
+
+Agent worktrees branch from `main`, and infrastructure that is still on a
+feature branch is therefore **not in your worktree**. This has already
+misled one agent: it found no `tests/`, concluded from an otherwise sound
+reading of the history that tests are not tracked in this project, and left
+its own test uncommitted.
+
+If `tests/` is missing, say so in your report and do not infer anything from
+its absence. Ask for the branch that carries it rather than deciding the
+project has no tests. Whatever else you conclude, **commit your test** --
+a module without one is not finished here.
+
 ## Reporting
 
 Run `bash tests/run.sh` in full — scattered edits are exactly what a
