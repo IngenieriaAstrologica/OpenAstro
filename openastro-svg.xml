@@ -249,7 +249,7 @@
 	style="fill: $planets_color_21;stroke:$planets_color_21;stroke-width:0.822857px;stroke-linejoin:round;" />
 </symbol>
 
-<symbol id="intp_perigee">
+<symbol id="intp._perigee">
 	<path
 	d=""
 	style="fill: $planets_color_22;stroke:$planets_color_22;stroke-width:0.822857px;stroke-linejoin:round;" />
