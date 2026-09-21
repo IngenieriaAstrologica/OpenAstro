@@ -1049,13 +1049,25 @@ class openAstroSqlite:
         return  
     
     """
-    
+
     Function to import zet8 databases
 
-    """ 
-    
+    """
+
     def importZet8(self, target_db, data):
-    
+        return self.importPeople(target_db, data)
+
+    """
+
+    Function to bulk import charts read from a foreign file into a people
+    database.  Every row needs name, year, month, day, hour (the datetime
+    already in UTC), latitude, longitude, location and timezone; notes are
+    optional.
+
+    """
+
+    def importPeople(self, target_db, data):
+
         target_con = sqlite3.connect(target_db)
         target_con.row_factory = sqlite3.Row
         target_cur = target_con.cursor()
@@ -1082,12 +1094,14 @@ class openAstroSqlite:
             
             gname = self.gnearest( float(row['latitude']),float(row['longitude']) ) 
             
+            #17 columns, so id plus 16 values: image and countrycode are the
+            #two the caller has nothing to say about
             sql = 'INSERT INTO event_natal (id,name,year,month,day,hour,geolon,geolat,altitude,\
                 location,timezone,notes,image,countrycode,geonameid,timezonestr,extra) VALUES \
-                (null,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+                (null,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
             tuple = (row['name']+name_suffix,row['year'],row['month'],row['day'],row['hour'],row['longitude'],
-                row['latitude'],25,row['location'],row['timezone'],"",
-                "",gname['geonameid'],gname['timezonestr'],"")
+                row['latitude'],25,row['location'],row['timezone'],row.get('notes',""),
+                "","",gname['geonameid'],gname['timezonestr'],"")
             target_cur.execute(sql,tuple)
             
         #Finished, close connection
@@ -3751,6 +3765,46 @@ class openAstroInstance:
         f.close()
         return
 
+    def importKepler(self, filename):
+        #Kepler/CPA files hold a whole catalogue of charts, so they go into
+        #the people database like a Zet8 one rather than replacing the chart
+        #on screen.
+        try:
+            records = importfile.getKepler(filename)
+        except (IOError, OSError) as e:
+            dprint('importKepler: cannot read %s: %s' % (filename,e))
+            return
+        if len(records) == 0:
+            #Astrolog32 also owns *.dat, and this is what tells the two
+            #apart: no backslash tagged natal segment, nothing to import.
+            dprint('importKepler: no Kepler/CPA records in %s' % filename)
+            return
+
+        data=[]
+        for r in records:
+            #The parser already turned the file's zone field into a plain
+            #UTC offset, so the shift reads like the Zet8 one above.
+            try:
+                dt = datetime.datetime(r['year'],r['month'],r['day'],r['hour'],r['minute'])
+                dt = dt - datetime.timedelta(seconds=float(r['timezone'])*float(3600))
+            except (ValueError, OverflowError):
+                continue
+            data.append({})
+            data[-1]['name']=r['name'] if r['name'] else _('Unnamed')
+            data[-1]['year']=dt.year
+            data[-1]['month']=dt.month
+            data[-1]['day']=dt.day
+            data[-1]['hour']=float(dt.hour) + float(dt.minute/60.0)
+            data[-1]['latitude']=r['latitude']
+            data[-1]['longitude']=r['longitude']
+            data[-1]['location']=r['location']
+            data[-1]['timezone']=r['timezone']
+            data[-1]['notes']=r['notes']
+
+        db.importPeople( cfg.peopledb , data )
+        dprint('importKepler: database with %s entries: %s' % (len(data),filename))
+        return
+
     def svgSafeHref(self, name):
         name=name.replace(' ','_')
         return name
@@ -3811,6 +3865,7 @@ class mainWindow:
         imp_menu.append(mi(_('Skylendar (*.skif)'), self.doImport, 'importSkylendar'))
         imp_menu.append(mi(_('Astrolog (*.dat)'), self.doImport, 'importAstrolog32'))
         imp_menu.append(mi(_('Zet8 Dbase (*.zbs)'), self.doImport, 'importZet8'))
+        imp_menu.append(mi(_('Kepler/CPA Dbase (*.dat)'), self.doImport, 'importKepler'))
         chart_menu.append(imp_top)
         exp_top, exp_menu = submenu(_('Save as'))
         exp_menu.append(mi(_('PNG Image'), self.doExport, 'exportPNG'))
@@ -4183,8 +4238,13 @@ class mainWindow:
             filter.add_pattern("*.dat")
         elif widget.get_name() == 'importZet8':
             filter.set_name(_("Zet8 Databases (*.zbs)"))
-            filter.add_pattern("*.zbs") 
-        chooser.add_filter(filter)      
+            filter.add_pattern("*.zbs")
+        elif widget.get_name() == 'importKepler':
+            filter.set_name(_("Kepler/CPA Databases (*.dat)"))
+            #the DOS programs wrote the extension in upper case
+            filter.add_pattern("*.dat")
+            filter.add_pattern("*.DAT")
+        chooser.add_filter(filter)
         response = chooser.run()
         
         if response == Gtk.ResponseType.OK:
@@ -4197,7 +4257,9 @@ class mainWindow:
             elif widget.get_name() == 'importAstrolog32':
                 openAstro.importAstrolog32(chooser.get_filename())
             elif widget.get_name() == 'importZet8':
-                openAstro.importZet8(chooser.get_filename())            
+                openAstro.importZet8(chooser.get_filename())
+            elif widget.get_name() == 'importKepler':
+                openAstro.importKepler(chooser.get_filename())
             self.updateChart()
         elif response == Gtk.ResponseType.CANCEL:
                     dprint('Dialog closed, no files selected')

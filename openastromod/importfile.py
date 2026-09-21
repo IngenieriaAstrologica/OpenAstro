@@ -18,6 +18,9 @@
 """
 from __future__ import with_statement
 
+import datetime
+import re
+
 from xml.dom.minidom import parseString
 
 from codecs import EncodedFile
@@ -179,3 +182,164 @@ def getAstrolog32(filename):
 	f.close()
 	return [d]
 
+
+#Kepler/CPA record layout, one record per line, fields introduced by a
+#backslash tag.  Only the tags below are used by this importer:
+#
+#  \A>  secondary chart (the moment the chart was drawn); ignored
+#  \S>  the natal subject: date, clock time, zone, latitude, longitude, tolerance
+#  \N>  name
+#  \L>  place name
+#  \D>  classification codes plus a free-text note
+#
+#The numeric block of \A> and \S> is fixed width and space padded, so
+#"1988- 6-10 21:33" and " 325- 5-20 12: 0" are both single date/time fields
+#and must not be split on whitespace.  \S> carries one float more than \A>:
+#the birth time tolerance in decimal hours (12.00 = time unknown, chart cast
+#for noon).
+KEPLER_TAG = re.compile('\\\\([A-Za-z0-9])>')
+#year-month-day hour:minute, every part space padded, the year possibly BC
+KEPLER_DATETIME = re.compile('^\\s*(-?\\d{1,4})-\\s*(\\d{1,2})-\\s*(\\d{1,2})\\s+(\\d{1,2}):\\s*(\\d{1,2})\\s*(.*)$')
+KEPLER_FLOAT = re.compile('-?\\d+\\.\\d+')
+#leading classification codes of \D>: a kind (:P a person, :E an event) and
+#for a person a sex (:V a man, :H a woman, :N an institution).  Anything
+#after those is the note itself, so the sex letter only counts when it fills
+#a whole colon separated field.
+KEPLER_CODES = re.compile('^:([PE])(?::([VHN])(?=:|$))?:?')
+#the corpus holds stray NUL and ESC bytes inside the text fields
+KEPLER_CONTROL = re.compile('[\\x00-\\x1f\\x7f]')
+
+def _keplerText(text):
+	"""Internal function to clean one Kepler/CPA text field
+	"""
+	return KEPLER_CONTROL.sub('',text).strip()
+
+def _keplerDecode(raw):
+	"""Internal function to decode a Kepler/CPA file to text
+
+	The format is single byte and never UTF-8, but it is not one codepage
+	either.  Files written by the DOS programs are CP850, where the Spanish
+	accents sit in 0x80-0xA8, while a few later ones are ISO-8859-1, where
+	they sit in 0xC0-0xFF.  Reading CP850 as ISO-8859-1 turns every "n with
+	a tilde" into a currency sign, so choose by the range the file actually
+	uses.  ISO-8859-1 is the fallback because it decodes any byte at all,
+	which is what keeps a binary file from raising.
+	"""
+	try:
+		return raw.decode("utf-8")
+	except UnicodeDecodeError:
+		pass
+	dos=0
+	latin=0
+	for byte in bytearray(raw):
+		if 0x80 <= byte <= 0xA8:
+			dos += 1
+		elif 0xC0 <= byte <= 0xFF:
+			latin += 1
+	if dos > latin:
+		try:
+			return raw.decode("cp850")
+		except (UnicodeDecodeError, LookupError):
+			pass
+	return raw.decode("iso-8859-1")
+
+def _keplerSegments(line):
+	"""Internal function to split one Kepler/CPA line into its backslash tags
+
+	Returns a dict tag -> text.  A tag repeated on the same line keeps its
+	first occurrence, which is how the Kepler programs read them back.
+	"""
+	segments={}
+	marks=[(m.group(1),m.start(),m.end()) for m in KEPLER_TAG.finditer(line)]
+	for i in range(len(marks)):
+		tag,start,end = marks[i]
+		stop = marks[i+1][1] if i+1 < len(marks) else len(line)
+		if tag not in segments:
+			segments[tag]=line[end:stop]
+	return segments
+
+def _keplerRecord(line):
+	"""Internal function to turn one Kepler/CPA line into a chart dict
+
+	Returns None when the line carries no usable natal segment, so that a
+	corrupt line never aborts the whole file.
+	"""
+	segments=_keplerSegments(line)
+	if 'S' not in segments:
+		return None
+	m=KEPLER_DATETIME.match(segments['S'])
+	if not m:
+		return None
+	year,month,day,hour,minute,tail = m.groups()
+	numbers=KEPLER_FLOAT.findall(tail)
+	if len(numbers) < 3:
+		return None
+
+	d={}
+	d['year']=int(year)
+	d['month']=int(month)
+	d['day']=int(day)
+	d['hour']=int(hour)
+	d['minute']=int(minute)
+	#Reject the typing damage the corpus carries - month 0, day 82, 7:80,
+	#82:00 - and BC years, which no chart in openastro can hold.  datetime
+	#also settles 1909-02-29 and the like, which a range check would pass.
+	if d['year'] < 1 or not 0 <= d['hour'] <= 23 or not 0 <= d['minute'] <= 59:
+		return None
+	try:
+		datetime.date(d['year'],d['month'],d['day'])
+	except ValueError:
+		return None
+
+	#The zone field is the correction to ADD to the clock time to obtain UT,
+	#i.e. the negated UTC offset: Spain on CET is stored as -1.00.  Hand it
+	#on as a plain UTC offset so that it reads like every other importer.
+	#Written as a subtraction to keep a zone of 0.00 from becoming -0.0.
+	d['timezone']=0.0-float(numbers[0])
+	d['latitude']=float(numbers[1])
+	d['longitude']=float(numbers[2])
+	if abs(d['latitude']) > 90 or abs(d['longitude']) > 180:
+		return None
+	#birth time tolerance in decimal hours; absent on a few old records
+	d['accuracy']=float(numbers[3]) if len(numbers) > 3 else None
+
+	d['name']=_keplerText(segments.get('N',''))
+	d['location']=_keplerText(segments.get('L',''))
+
+	notes=_keplerText(segments.get('D',''))
+	codes=KEPLER_CODES.match(notes)
+	d['sex']=''
+	if codes:
+		if codes.group(1) == 'P' and codes.group(2) in ('V','H'):
+			d['sex']='M' if codes.group(2) == 'V' else 'F'
+		notes=notes[codes.end():].strip()
+	d['notes']=notes
+	return d
+
+def getKepler(filename):
+	"""Read a Kepler/CPA chart database and return every record it holds
+
+	example (fields are the fixed width ones described above):
+\\A>1988- 6-10 21:33 -1.00  40.25   -3.70\\S>1952-11-27 17:10 -1.00  38.10   -0.95  0.08\\N>A Name\\L>A Town\\D>:P:V:a note
+
+	Kepler/CPA shares the *.dat extension with Astrolog32, so the format is
+	recognised by content: an Astrolog32 file has no backslash tagged natal
+	segment and yields an empty list here, exactly as a file of any other
+	kind would.  Decoding never fails, so a binary file also comes back
+	empty rather than raising.
+	"""
+	h=open(filename,"rb")
+	raw=h.read()
+	h.close()
+	text=_keplerDecode(raw)
+	output=[]
+	for line in text.replace("\r\n","\n").replace("\r","\n").split("\n"):
+		if not line.strip():
+			continue
+		try:
+			record=_keplerRecord(line)
+		except (ValueError, IndexError):
+			record=None
+		if record is not None:
+			output.append(record)
+	return output
