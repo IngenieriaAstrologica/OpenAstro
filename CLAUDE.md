@@ -74,6 +74,26 @@ Gaussian weighting predicts a mean of 7.76 for 100 pairs; measured over a
 year of real transits it came out 7.97, which is what makes García's
 `RNG = 15` plot range credible. Neither figure was fitted to the other.
 
+## Working unattended
+
+Four agent roles are defined in `.claude/agents/`, split so two can run at
+once without meeting in the same file: `oa-engine` owns `openastromod/`,
+`oa-draw` owns the SVG and the templates, `oa-dialog` owns `tests/dialog/`,
+`oa-hygiene` takes the scattered small work. Two or three at a time is the
+useful limit — almost everything else funnels into `openastro`, and parallel
+edits to one 9900-line file produce conflicts rather than speed.
+
+Take work from the "Cola ejecutable" section of `TODO.md`. Do not take
+anything from the "PENDIENTE DE REVISAR" block: those need a person at a
+screen.
+
+Resuming after a usage limit has two mechanisms, described in
+`tools/README.md`. The normal one is an open session scheduling its own
+wake-up past the reset — free, and it keeps its context, but it lives in
+memory and dies with the terminal. The fallback is a Task Scheduler entry
+running `tools/resume.ps1`, which survives a reboot and refuses to start
+when a session is already working.
+
 ## What the tests cannot tell you
 
 Whether a drawing looks right. A reference image reports that something
