@@ -150,4 +150,24 @@ R.check('the spinner refuses a cycle above %d' % (atacir_engine.MAX_CYCLE,),
         entry2['C'].get_value_as_int() <= atacir_engine.MAX_CYCLE,
         'C-%d' % entry2['C'].get_value_as_int())
 
+# --------------------------------------------------------- a date it cannot use
+# Every technique dialog builds a datetime from raw entry text. Without a
+# guard that is an unhandled exception inside a signal handler: GTK prints a
+# traceback to stderr the user never sees, and the OK button simply does
+# nothing.
+w3 = Win()
+entry3 = open_dialog(w3)
+del CALLS[:]
+del ERRORS[:]
+entry3['M'].set_text('13')
+try:
+    w3.specialAtacirSubmit(None, entry3)
+    crashed = None
+except Exception as exc:
+    crashed = '%s: %s' % (type(exc).__name__, exc)
+R.note('month 13 -> %s' % (crashed or (ERRORS[-1] if ERRORS else 'accepted'),))
+R.check('month 13 is refused, not raised',
+        crashed is None and not CALLS and ERRORS,
+        crashed or (ERRORS[-1] if ERRORS else CALLS))
+
 R.finish()

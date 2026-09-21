@@ -4596,7 +4596,19 @@ class mainWindow:
         return
     
     def specialSolarSubmit(self, widget, entry):
-        intyear = int(entry.get_text())
+        #a bad year must leave the dialog open and say so, not raise behind it
+        try:
+            intyear = int(entry.get_text())
+        except ValueError:
+            md = Gtk.MessageDialog(self.win_SS,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Enter a valid year"))
+            md.run(); md.destroy()
+            return
+        if not (1000 <= intyear <= 9999):
+            md = Gtk.MessageDialog(self.win_SS,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Year must be 1000..9999"))
+            md.run(); md.destroy()
+            return
         openAstro.localToSolar(intyear)
         self.win_SS.destroy()
         #a fresh solar return defaults to the bi-wheel view
@@ -4663,8 +4675,16 @@ class mainWindow:
             intmonth = int(entry['M'].get_text())
             intday = int(entry['D'].get_text())
         except ValueError:
+            md = Gtk.MessageDialog(self.win_SL,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Enter a valid date (Y-M-D)"))
+            md.run(); md.destroy()
             return
-        if not (1 <= intmonth <= 12) or not (1 <= intday <= 31):
+        try:
+            datetime.datetime(intyear, intmonth, intday)
+        except ValueError:
+            md = Gtk.MessageDialog(self.win_SL,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Enter a valid date (Y-M-D)"))
+            md.run(); md.destroy()
             return
         openAstro.localToLunar(intyear, intmonth, intday)
         self.win_SL.destroy()
@@ -4746,7 +4766,13 @@ class mainWindow:
         return
 
     def specialSecondaryProgressionSubmit(self, widget, entry):
-        dt  = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()),int(entry['h'].get_text()),int(entry['m'].get_text()))
+        try:
+            dt  = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()),int(entry['h'].get_text()),int(entry['m'].get_text()))
+        except ValueError:
+            md = Gtk.MessageDialog(self.win_SSP,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Enter a valid date and time (Y-M-D h:m)"))
+            md.run(); md.destroy()
+            return
         openAstro.localToSecondaryProgression(dt)
         self.win_SSP.destroy()
         #a fresh progression defaults to the bi-wheel view
@@ -4935,7 +4961,13 @@ class mainWindow:
         return
 
     def specialDirectedSubmit(self, widget, entry):
-        dt  = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()),int(entry['h'].get_text()),int(entry['m'].get_text()))
+        try:
+            dt  = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()),int(entry['h'].get_text()),int(entry['m'].get_text()))
+        except ValueError:
+            md = Gtk.MessageDialog(self.win_SPD,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Enter a valid date and time (Y-M-D h:m)"))
+            md.run(); md.destroy()
+            return
         key = self.directed_key_list[entry['K'].get_active()]
         converse = entry['R'].get_active() == 1
         measure = self.directed_measure_list[entry['S'].get_active()]
@@ -5059,7 +5091,13 @@ class mainWindow:
         return
 
     def specialAtacirSubmit(self, widget, entry):
-        dt = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()))
+        try:
+            dt = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()))
+        except ValueError:
+            md = Gtk.MessageDialog(self.win_SAT,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Enter a valid date (Y-M-D)"))
+            md.run(); md.destroy()
+            return
         cycle = atacir_engine.valid_cycle(entry['C'].get_value_as_int())
         converse = entry['R'].get_active() == 1
         key = self.atacir_key_list[entry['K'].get_active()]
