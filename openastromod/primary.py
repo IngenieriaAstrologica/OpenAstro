@@ -39,6 +39,8 @@ import math
 
 import swisseph as swe
 
+from openastromod import swiss
+
 # Naibod arc: mean motion of the Sun, degrees per year of life
 NAIBOD_DEGREE_PER_YEAR = 0.9856473663
 # Mean tropical year in days (for age = (target_jd - birth_jd) / year)
@@ -70,6 +72,35 @@ MEASURE_TAGS = {"ecl_ecl": ", ecliptic", "asc_asc": ", ascensional", "asc_ecl": 
 TRANSIT_MEASURE_KEYS = ("ecliptic", "ascensional")
 
 TRANSIT_MEASURE_TAGS = {"ecliptic": "", "ascensional": ", ascensional"}
+
+# Transit target modes: which natal reference point a transiting planet's
+# aspects are measured against (Morinus transits.py Transit.PLANET /
+# .ANTISCION / .CONTRAANTISCION). Morinus itself only ever compares the
+# transiting body's own TRUE longitude against the natal point -- never the
+# transiting body's antiscion -- so "antiscion"/"contraantiscion" here shift
+# only the natal side of the comparison, reusing swiss.calc_antiscion()
+# rather than a second antiscion formula. Morinus' automatic day/month scan
+# additionally hardcodes the aspect to CONJUNCTIO for these two targets (it
+# is only looking for exact crossings); here the target is exposed like any
+# other, with the full aspect set and orbs, matching how this transit engine
+# already treats TRANSIT_MEASURE_KEYS.
+TRANSIT_TARGET_KEYS = ("natal", "antiscion", "contraantiscion")
+
+TRANSIT_TARGET_TAGS = {"natal": "", "antiscion": ", antiscia", "contraantiscion": ", contra-antiscia"}
+
+
+def transit_target_longitude(natal_lon, ayan, target):
+	"""Natal reference longitude for a transit target mode.
+
+	`target` selects which point of the natal planet a transiting body is
+	compared against: its true longitude (the current behaviour, "natal"),
+	its antiscion, or its contra-antiscion. Antiscia are tropical by
+	definition (see swiss.calc_antiscion), hence the ayanamsa parameter.
+	"""
+	if target not in TRANSIT_TARGET_KEYS or target == "natal":
+		return float(natal_lon)
+	ant, cant = swiss.calc_antiscion(natal_lon, ayan)
+	return cant if target == "contraantiscion" else ant
 
 
 def norm360(x):

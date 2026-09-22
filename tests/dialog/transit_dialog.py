@@ -67,8 +67,8 @@ CALLS = []
 
 
 class OpenAstro(object):
-    def localToTransit(self, dt_local=None, converse=False, measure="ecliptic"):
-        CALLS.append((dt_local, converse, measure))
+    def localToTransit(self, dt_local=None, converse=False, measure="ecliptic", target="natal"):
+        CALLS.append((dt_local, converse, measure, target))
 
     def makeSVG(self):
         CALLS.append(('makeSVG',))
@@ -123,7 +123,8 @@ got = tuple(entry[k].get_text() for k in ('Y', 'M', 'D', 'h', 'm'))
 print("defaults with an empty astrocfg:", got)
 assert got[:3] == ('%d' % now.year, '%02d' % now.month, '%02d' % now.day), got
 assert entry['R'].get_active() == 0 and entry['S'].get_active() == 0
-print("[ok] first use offers today and Direct/Ecliptic")
+assert entry['T'].get_active() == 0
+print("[ok] first use offers today and Direct/Ecliptic/Natal positions")
 
 # the Now button refills the fields
 entry['Y'].set_text('1500')
@@ -151,28 +152,31 @@ for k, v in (('Y', '1999'), ('M', '12'), ('D', '31'), ('h', '23'), ('m', '45')):
     entry[k].set_text(v)
 entry['R'].set_active(1)
 entry['S'].set_active(1)
+entry['T'].set_active(1)
 w.specialTransitSubmit(ok, entry)
 print("localToTransit called with:", CALLS[0])
-assert CALLS[0] == (datetime.datetime(1999, 12, 31, 23, 45), True, 'ascensional'), CALLS
+assert CALLS[0] == (datetime.datetime(1999, 12, 31, 23, 45), True, 'ascensional', 'antiscion'), CALLS
 assert ('makeSVG',) in CALLS and Win._reset == 1
 print("stored in astrocfg:", {k: v for k, v in sorted(STORE.items())})
 # The date is deliberately NOT remembered. Every technique dialog was
 # changed to open on the current moment, and restoring the last date used
 # would defeat that -- the point of a transit dialog is usually "now".
-# Direction and measure are preferences and do persist.
-assert STORE == {'transit_dir': '1', 'transit_measure': 'ascensional'}, STORE
-print("[ok] the request reaches the engine; direction and measure persist,")
-print("     and the date deliberately does not")
+# Direction, measure and target are preferences and do persist.
+assert STORE == {'transit_dir': '1', 'transit_measure': 'ascensional', 'transit_target': 'antiscion'}, STORE
+print("[ok] the request reaches the engine; direction, measure and target")
+print("     persist, and the date deliberately does not")
 
 # --------------------------------------------- the dialog reopens where it was
 w2 = Win()
 entry2, ok2 = open_dialog(w2)
 got2 = tuple(entry2[k].get_text() for k in ('Y', 'M', 'D', 'h', 'm'))
-print("reopened with:", got2, "dir", entry2['R'].get_active(), "measure", entry2['S'].get_active())
+print("reopened with:", got2, "dir", entry2['R'].get_active(), "measure", entry2['S'].get_active(),
+      "target", entry2['T'].get_active())
 now2 = datetime.datetime.now()
 assert got2[:3] == (str(now2.year), '%02d' % now2.month, '%02d' % now2.day), got2
 assert entry2['R'].get_active() == 1 and entry2['S'].get_active() == 1
-print("[ok] it reopens on today, with the last direction and measure kept")
+assert entry2['T'].get_active() == 1
+print("[ok] it reopens on today, with the last direction, measure and target kept")
 
 # ----------------------------------------------------------------- validation
 del CALLS[:]

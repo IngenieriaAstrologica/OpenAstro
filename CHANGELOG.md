@@ -2,6 +2,87 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Feature: transits to antiscia — 2026-09-22
+
+### Change
+- New **Target** selector in the **Transit Chart** dialog, alongside the
+  existing Measure one: **Natal positions** (default, the current
+  behaviour), **Antiscia** or **Contra-antiscia**.
+- In antiscion/contra-antiscion mode, aspects are measured between the
+  transiting planet's TRUE longitude and the natal planet's antiscion (or
+  contra-antiscion) point instead of its true position -- following
+  Morinus `transits.py` (`Transit.ANTISCION` / `.CONTRAANTISCION`), which
+  always compares the transiting body's own true position against the
+  natal point, never the transiting body's own antiscion. Unlike Morinus'
+  automatic day/month scan (which hardcodes the conjunction only, since it
+  is just hunting for exact crossings), here the target gets the full
+  aspect set and orbs, matching how this engine already treats
+  `TRANSIT_MEASURE_KEYS`.
+- Since an antiscion point has no defined ecliptic latitude, the
+  ascensional (mundo) measure only combines with the natal target; a
+  non-natal target is always measured on ecliptic longitude, same as
+  Morinus never pairs mundo contacts with antiscia either. The bi-wheel
+  itself is untouched: the aspect *line* still draws from the planet's
+  true position (as the ascensional measure already does), only the
+  *orb calculation* moves to the antiscion/contra-antiscion point --
+  a table/aspect-list feature on the existing transit bi-wheel, no SVG
+  changes needed.
+- The last used target is remembered in `astrocfg` (`transit_target`),
+  like the measure. Synastry (which reuses the transit bi-wheel) follows
+  the saved target too, same as it already follows the saved measure.
+
+### How it works
+- `openastromod/primary.py` -- new `TRANSIT_TARGET_KEYS`/`TAGS` plus
+  `transit_target_longitude(natal_lon, ayan, target)`, which reuses
+  `swiss.calc_antiscion()` rather than a second antiscion formula.
+- `openastro` -- `localToTransit()` takes a `target` argument (default
+  `"natal"`, so every existing caller is unaffected) and adds it to the
+  chart title; `makeAspectsTransit()` picks `self.planets_antiscia_ut` /
+  `self.planets_contra_ut` (already computed every redraw for the Antiscia
+  chart) as the natal side of the diff instead of `self.planets_degree_ut`,
+  and restricts the ascensional branch to `target == "natal"`;
+  `specialTransit()`/`specialTransitSubmit()` add the Target combo,
+  validate it and persist it; Synastry's `openDatabaseSelectReturn()`
+  applies the saved target like it already does the saved measure.
+
+### Verification
+- `tests/engine/transit_target.py` (24 checks, real Swiss Ephemeris, same
+  natal chart as the lunar-return test: 1987-04-09 12:00:30 UT, lon
+  2.0367, lat 41.3436 -- natal Sun 19.109463, Moon 144.120167):
+  `transit_target_longitude()` matches `swiss.calc_antiscion()` bit for
+  bit for both bodies and both directions; matches a hand reflection
+  formula (`ant = (180 - lon) mod 360`) to better than 1e-9 degrees at
+  the natal longitudes plus the four axis/boundary points (0/90/180/270)
+  and a near-360 edge case; `ant(ant(Sun)) == Sun` to 0.0 exactly
+  (involution); a nonzero ayanamsa reaches `calc_antiscion()` unchanged
+  (sidereal Sun antiscion 111.490537 vs tropical 160.890537).
+- Exact-contact check, by construction (same style as the ascensional
+  transits feature): natal Sun antiscion = 160.890537 deg; a transiting
+  planet placed exactly there registers **orb 0.000000000000 deg
+  (0.000000 arcsec)** -- an exact conjunction -- while one placed 5 deg
+  off measures exactly 5.000000 deg, and antiscion/contra-antiscion are
+  exactly 180 deg apart.
+- `tests/dialog/transit_dialog.py` extended: the Target combo defaults to
+  Natal positions on first use, a submitted Ascensional+Antiscia request
+  reaches `localToTransit(dt, converse, 'ascensional', 'antiscion')`
+  exactly, `transit_target` persists in `astrocfg` alongside direction and
+  measure (date still deliberately not remembered), and the dialog reopens
+  with the antiscion target selected.
+- `bash tests/run.sh`: 24/24 stages pass (was 23; `transit_target.py` is
+  new), including both lint checks (no `self.method()` call to an
+  `openAstroInstance` method).
+
+### Files changed
+- `openastromod/primary.py` -- `TRANSIT_TARGET_KEYS`/`TAGS`,
+  `transit_target_longitude()`
+- `openastro` -- `transit_target` default, `localToTransit()`,
+  `makeAspectsTransit()`, `specialTransit()`/`specialTransitSubmit()`,
+  Synastry's saved-target follow in `openDatabaseSelectReturn()`
+- `tests/engine/transit_target.py` -- new
+- `tests/dialog/transit_dialog.py` -- Target combo coverage
+
+---
+
 ## Change: the harmogram's twelve curves, made legible — 2026-09-21
 
 ### Change
