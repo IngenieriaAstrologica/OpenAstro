@@ -83,6 +83,62 @@ Entries without a date come from the 2026-08-26 session.
 
 ---
 
+## Feature: Ingresses, Lunations, Eclipses — 2026-09-22
+
+### Change
+One new Tables entry, `Tables -> Ingresses, Lunations, Eclipses`, covering
+the three mundane-astrology calendar techniques carta-natal.es keeps as
+separate pages (`estaciones.php`, `lunaciones.php`, `eclipses.php`). They
+share one question -- "what happens, and exactly when, over a date range" --
+so they share one search module (`openastromod/mundane.py`) and one dated
+table, styled like the Fixed Stars table and the Cyclic Index turning-point
+list. The dialog asks a From/To span (defaulting to the current calendar
+year) and four category checkboxes -- solar ingresses, lunar ingresses,
+lunations, eclipses -- with solar ingresses, lunations and eclipses on by
+default and lunar ingresses opt-in, since Moon ingresses alone run to about
+150 rows a year. A 40-year span cap guards the dialog against a fat-fingered
+range; the categories persist to `astrocfg` and the dates deliberately do
+not, matching every other technique dialog in the project.
+
+### Every date is a solver, not a scan
+* **Ingresses** walk the twelve 30-degree cusps forward with
+  `swe.solcross_ut()` / `swe.mooncross_ut()`, one exact solver call per
+  event.
+* **Lunations** have no `syzygy_ut` in the installed pyswisseph build (the
+  `cross` family only targets one body against a *fixed* longitude, and the
+  Sun-Moon angle moves), so this is the one place the module root-finds by
+  hand: Newton's method on the Sun-Moon phase angle, using the relative
+  speed Swiss Ephemeris already returns via `FLG_SPEED`. The phase is
+  monotonic -- the Moon's slowest apparent speed is always faster than the
+  Sun's fastest -- so the root exists and Newton converges in a handful of
+  steps.
+* **Eclipses** call Swiss Ephemeris' own forward search,
+  `swe.sol_eclipse_when_glob()` and `swe.lun_eclipse_when()`, global rather
+  than location-bound.
+
+### Verified two ways, per technique
+Each search gets one cross-check against a published value it could not
+have been fitted to, and one structural invariant a broken search could not
+satisfy by accident (`tests/engine/mundane.py`):
+
+| technique | published cross-check | structural check |
+|---|---|---|
+| solar ingresses | 2024 March equinox within 24.2 s of NASA/USNO's 03:06 UTC | 2024 holds exactly the twelve signs, each once, in zodiac order, 27-32 days apart |
+| lunations | 2024-04-08 new moon within 8.3 s of NASA's 18:21 UTC | 2022-2027: 62 new and 62 full moons, every new-to-new and full-to-full gap 29.282-29.806 days (true synodic month is 29.27-29.83), new/full alternating strictly, and the Sun-Moon angle at the found instant within 3.3e-9 deg of exactly 0 or 180 |
+| solar eclipses | the 2024-04-08 "Great American Eclipse" within 0.6 s of NASA's 18:17:21 UTC | 2022-2027's 10 solar eclipses all fall within 0.01 days of a new moon, kinds all recognised |
+| lunar eclipses | the 2025-09-07 total lunar eclipse within 50.3 s of the published 18:11 UTC | 2022-2027's 10 lunar eclipses all fall within 0.01 days of a full moon, kinds all recognised |
+
+The dialog itself is driven headless the same way as the other technique
+prompts (`tests/dialog/mundane_dialog.py`, 17 checks): the default span and
+categories, cancel drawing and persisting nothing, every validation guard
+(To before/equal to From, a span over 40 years, an invalid calendar date,
+non-numeric input, no category selected), and that a custom category
+selection round-trips through `astrocfg` into the next dialog's defaults.
+
+`bash tests/run.sh`: 25 passed, 0 failed.
+
+---
+
 ## Change: the harmogram's twelve curves, made legible — 2026-09-21
 
 ### Change
