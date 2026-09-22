@@ -4185,6 +4185,18 @@ class mainWindow:
         self.window.connect("destroy", lambda w: Gtk.main_quit())
         self.window.set_title("OpenAstro.org")
         self.window.set_icon_from_file(cfg.iconWindow)
+        # Some window managers hide the minimize/maximize buttons for windows
+        # without an explicit NORMAL type hint, or for non-resizable windows.
+        # Neither is set anywhere else for this window, but make both explicit
+        # rather than rely on the GTK defaults -- and ask for the standard
+        # button layout at the GTK level too, as a fallback that doesn't
+        # depend on the window manager's own default decoration layout.
+        self.window.set_type_hint(Gdk.WindowTypeHint.NORMAL)
+        self.window.set_decorated(True)
+        self.window.set_resizable(True)
+        Gtk.Settings.get_default().set_property(
+            "gtk-decoration-layout", "menu:minimize,maximize,close"
+        )
         # default size (used when unmaximized); the window is maximized after show_all()
         try:
             w = min(int(openAstro.screen_width * 0.9), 1280) if openAstro.screen_width > 0 else 1280
