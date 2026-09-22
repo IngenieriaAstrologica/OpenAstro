@@ -1452,6 +1452,11 @@ class openAstroInstance:
         #transit direction: direct (the sky of the requested moment) or
         #converse (that moment mirrored about the birth instant)
         self.transit_converse=False
+        #Aries Rising chart view: purely presentational -- when True the
+        #wheel is rotated so 0 Aries sits at the horizon instead of the
+        #true Ascendant (see wheelPivot()). No coordinate is recomputed,
+        #only the drawing rotation changes.
+        self.aries_rising=False
 
         #Default dpi for svg is set per-handle when the file is loaded (setSVG)
 
@@ -2568,7 +2573,7 @@ class openAstroInstance:
         ink0 = self.colors['paper_0']
         for e, rstar in zip(hits, rlevels):
             ink = colors[e] if e < len(colors) and colors[e] else ink0
-            zeropoint = 360 - self.houses_degree_ut[6]
+            zeropoint = 360 - self.wheelPivot()
             t_offset = zeropoint + lons[e]
             if t_offset > 360:
                 t_offset = t_offset - 360
@@ -2583,7 +2588,7 @@ class openAstroInstance:
     def degreeRing( self , r ):
         out=''
         for i in range(72):
-            offset = float(i*5) - self.houses_degree_ut[6]
+            offset = float(i*5) - self.wheelPivot()
             if offset < 0:
                 offset = offset + 360.0
             elif offset > 360:
@@ -2599,7 +2604,7 @@ class openAstroInstance:
     def degreeTransitRing( self , r ):
         out=''
         for i in range(72):
-            offset = float(i*5) - self.houses_degree_ut[6]
+            offset = float(i*5) - self.wheelPivot()
             if offset < 0:
                 offset = offset + 360.0
             elif offset > 360:
@@ -2698,15 +2703,29 @@ class openAstroInstance:
     
     #draw svg aspects: ring, aspect ring, degreeA degreeB
     def drawAspect( self , r , ar , degA , degB , color):
-            offset = (int(self.houses_degree_ut[6]) / -1) + int(degA)
+            offset = (int(self.wheelPivot()) / -1) + int(degA)
             x1 = self.sliceToX( 0 , ar , offset ) + (r-ar)
             y1 = self.sliceToY( 0 , ar , offset ) + (r-ar)
-            offset = (int(self.houses_degree_ut[6]) / -1) + int(degB)
+            offset = (int(self.wheelPivot()) / -1) + int(degB)
             x2 = self.sliceToX( 0 , ar , offset ) + (r-ar)
             y2 = self.sliceToY( 0 , ar , offset ) + (r-ar)
             out = '         <line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: '+color+'; stroke-width: 1; stroke-opacity: .9;"/>\n'
             return out
     
+    #degree that maps to offset=0 in sliceToX/sliceToY, i.e. to the
+    #horizon (9 o'clock) position on the wheel. Normally the chart's true
+    #Descendant, so the true Ascendant degree lands on the horizon.
+    #The "Aries Rising" chart view fixes this at 180 (opposite 0 Aries)
+    #instead, so the zodiac ring, house cusps and planets all rotate as
+    #if the Ascendant sat exactly at 0 Aries -- a pure re-rotation of the
+    #drawing, no ecliptic longitude is recomputed.
+    def wheelPivot( self ):
+        if getattr(self, 'aries_rising', False):
+            return 180.0
+        if db.astrocfg["houses_system"] == "G":
+            return self.houses_degree_ut[18]
+        return self.houses_degree_ut[6]
+
     def sliceToX( self , slice , r, offset):
         plus = (math.pi * offset) / 180
         radial = ((math.pi/6) * slice) + plus
@@ -2719,10 +2738,7 @@ class openAstroInstance:
     
     def zodiacSlice( self , num , r , style,  type):
         #pie slices
-        if db.astrocfg["houses_system"] == "G":
-            offset = 360 - self.houses_degree_ut[18]
-        else:
-            offset = 360 - self.houses_degree_ut[6]
+        offset = 360 - self.wheelPivot()
         #check transit
         if self.type == "Transit":
             dropin=0
@@ -2779,8 +2795,9 @@ class openAstroInstance:
                 dropin=self.c3
                 roff=self.c1
                 
-            #offset is negative desc houses_degree_ut[6]
-            offset = (int(self.houses_degree_ut[int(xr/2)]) / -1) + int(self.houses_degree_ut[i])
+            #offset is negative desc wheelPivot() (true Descendant, or a
+            #fixed 180 under the Aries Rising chart view)
+            offset = (int(self.wheelPivot()) / -1) + int(self.houses_degree_ut[i])
             x1 = self.sliceToX( 0 , (r-dropin) , offset ) + dropin
             y1 = self.sliceToY( 0 , (r-dropin) , offset ) + dropin
             x2 = self.sliceToX( 0 , r-roff , offset ) + roff
@@ -2797,7 +2814,7 @@ class openAstroInstance:
             #transit houses lines
             if self.type == "Transit":
                 #degrees for point zero
-                zeropoint = 360 - self.houses_degree_ut[6]
+                zeropoint = 360 - self.wheelPivot()
                 t_offset = zeropoint + self.t_houses_degree_ut[i]
                 if t_offset > 360:
                     t_offset = t_offset - 360
@@ -3043,10 +3060,10 @@ class openAstroInstance:
                 
             rtext=45
             if db.astrocfg['houses_system'] == "G":
-                offset = (int(self.houses_degree_ut[18]) / -1) + int(self.planets_degree_ut[i])
+                offset = (int(self.wheelPivot()) / -1) + int(self.planets_degree_ut[i])
             else:
-                offset = (int(self.houses_degree_ut[6]) / -1) + int(self.planets_degree_ut[i]+planets_delta[e])
-                trueoffset = (int(self.houses_degree_ut[6]) / -1) + int(self.planets_degree_ut[i])
+                offset = (int(self.wheelPivot()) / -1) + int(self.planets_degree_ut[i]+planets_delta[e])
+                trueoffset = (int(self.wheelPivot()) / -1) + int(self.planets_degree_ut[i])
             planet_x = self.sliceToX( 0 , (r-rplanet) , offset ) + rplanet
             planet_y = self.sliceToY( 0 , (r-rplanet) , offset ) + rplanet
             if self.type == "Transit":
@@ -3147,7 +3164,7 @@ class openAstroInstance:
                     rplanet=26
                     switch = 1  
                 
-                zeropoint = 360 - self.houses_degree_ut[6]
+                zeropoint = 360 - self.wheelPivot()
                 t_offset = zeropoint + self.t_planets_degree_ut[i]
                 if t_offset > 360:
                     t_offset = t_offset - 360
@@ -4074,6 +4091,15 @@ class mainWindow:
         for srv_it, srv_mode in self._srv_items:
             srv_it.connect('toggled', self.solarView, srv_mode)
         special_menu.append(srv_top)
+        #Aries Rising: purely presentational -- rotates the whole wheel so
+        #0 Aries sits at the horizon instead of the chart's true Ascendant
+        #(see wheelPivot() on openAstroInstance). Applies to any chart
+        #type and is independent of the Both/Inner/Outer selector above,
+        #so a plain checkbox rather than another radio group.
+        self._aries_rising_item = Gtk.CheckMenuItem(label=_('Aries Rising (0° Aries at Horizon)'), use_underline=True)
+        self._aries_rising_item.set_active(False)
+        self._aries_rising_item.connect('toggled', self.ariesRisingToggle)
+        special_menu.append(self._aries_rising_item)
         menubar.append(special_top)
 
         #Tables
@@ -4296,6 +4322,16 @@ class mainWindow:
         elif mode == 'outer':
             openAstro.type = getattr(openAstro, 'biwheel_single', 'Solar')
             openAstro.transit = False
+        openAstro.makeSVG()
+        self.draw.queue_draw()
+        self.draw.setSVG(self.tempfilename)
+        return
+
+    def ariesRisingToggle(self, widget):
+        #toggle the "Aries Rising" wheel rotation (0 Aries fixed at the
+        #horizon instead of the true Ascendant); see wheelPivot() on
+        #openAstroInstance -- purely a redraw, no chart data changes
+        openAstro.aries_rising = widget.get_active()
         openAstro.makeSVG()
         self.draw.queue_draw()
         self.draw.setSVG(self.tempfilename)
