@@ -53,7 +53,7 @@ from gi.repository import Gtk, Gdk, GLib, GObject, Rsvg, cairo
 #internal openastro modules
 sys.path.append("/usr/lib/python3.5/dist-packages") #trying to 'fix' some problems importing openastromod on some distros
 sys.path.append("/usr/lib/python3.5/site-packages") #trying to 'fix' some problems importing openastromod on some distros
-from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine, transit as transit_engine, cyclic as cyclic_engine, harmogram as harmogram_engine, harmonicvector as harmonicvector_engine, harmonics as harmonics_engine, mundane as mundane_engine
+from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, munprofection as munprofection_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine, transit as transit_engine, cyclic as cyclic_engine, harmogram as harmogram_engine, harmonicvector as harmonicvector_engine, harmonics as harmonics_engine, mundane as mundane_engine
 
 def _rsvg_render(handle, cr):
     """Render a whole SVG handle at its natural size onto a Cairo context,
@@ -1758,6 +1758,103 @@ class openAstroInstance:
         openAstro.transit=True
         return
 
+    def localToMunProfection(self, dt, converse=False):
+        #Placidian mapping of the Atacir dialog (the Zodiacal mapping above
+        #is Demetrio Santos' "atacir"; this one is what Morinus calls a
+        #"mundane profection"). Unlike the rigid Zodiacal rotation, this
+        #relocates the WHOLE natal chart to a fictitious geographical
+        #longitude computed from the Ascendant's diurnal/nocturnal semi-arc,
+        #split at the 6-year mark of a 12-year cycle
+        #(openastromod.munprofection.relocated_longitude, port of Morinus
+        #munprofections.MunProfections), recasts Placidus cusps at that
+        #longitude for the SAME UT instant as the radix, and repositions
+        #each body individually against its own natal Placidus speculum and
+        #the new RAMC (munprofection.reposition_frame, port of
+        #planets.Planet.calcMundaneProfPos). converse=True runs it into the
+        #past (negative elapsed years).
+        dt_utc = dt - datetime.timedelta(seconds=float(self.timezone)*float(3600))
+
+        if getattr(self, 'planets', None) is None:
+            self.planets = db.getSettingsPlanet()
+        natal = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+
+        target_jd = primary_engine.julday(dt_utc.year,dt_utc.month,dt_utc.day,self.decHourJoin(dt_utc.hour,dt_utc.minute,dt_utc.second))
+        diff_years = (target_jd - natal.jd_ut) / munprofection_engine.TROPICAL_YEAR
+        if converse:
+            diff_years = -diff_years
+
+        #natal Ascendant declination: Morinus' ascmc2[ASC][DECL] -- the
+        #natal Ascendant's own ecliptic point (latitude 0) taken to the equator
+        natal_asc_decl = primary_engine.ecliptic_to_equatorial(natal.houses_degree_ut[0], 0.0, natal.jd_ut)[1]
+
+        lon_z, diff_lon, cyc_in_years = munprofection_engine.relocated_longitude(
+            natal.ramc, natal_asc_decl, self.geolat, self.geolon, diff_years)
+
+        self.munprof_diff_years = diff_years
+        self.munprof_diff_lon = diff_lon
+        self.munprof_cyc_in_years = cyc_in_years
+        self.munprof_lon = lon_z
+        self.munprof_converse = converse
+
+        if diff_lon == 0.0:
+            #Same bypass Morinus' own stepper dialog uses at an exact
+            #multiple of 12 years (profectionstepperdlg.show: literally
+            #`pchart = self.chart`): the relocated longitude coincides with
+            #the radix, but the per-body mundane solve is a single trig
+            #approximation, not an exact inverse of the natal speculum (see
+            #openastromod.munprofection and tests/engine/munprofection.py
+            #for the up-to-a-degree drift this sidesteps) -- so at zero
+            #relocation the radix is shown unchanged rather than
+            #round-tripped through that approximation.
+            mp = list(natal.planets_degree_ut)
+            mh = list(natal.houses_degree_ut)
+        else:
+            #recast Placidus cusps at the fictitious longitude, same UT
+            #instant (only the longitude moves; date, hour and latitude
+            #stay the radix's)
+            reloc = ephemeris.ephData(self.year,self.month,self.day,self.hour,lon_z,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+            mp = munprofection_engine.reposition_frame(natal.planets_degree_ut, natal.planets_latitude, natal.ramc, reloc.ramc, self.geolat, natal.jd_ut)
+            mh = list(reloc.houses_degree_ut)
+            #the relocated houses define the angles directly -- the
+            #per-body mundane solve is degenerate exactly at the
+            #horizon/meridian it defines, so indices 23-26 (Asc/MC/Dsc/IC)
+            #are not run through it
+            if len(mp) > 26:
+                mp[23], mp[24], mp[25], mp[26] = mh[0], mh[9], mh[6], mh[3]
+            #South Node mirrors the (already relocated) North Node, exactly
+            #as ephemeris.ephData derives it natally -- it has no speculum
+            #of its own in Morinus either
+            if len(mp) > 29 and len(mp) > 10:
+                mp[29] = munprofection_engine.normalize(mp[10] - 180.0)
+
+        self.t_planets_degree_ut = mp
+        self.t_planets_sign, self.t_planets_degree = self.split_sign_degree(mp)
+        self.t_planets_retrograde = list(natal.planets_retrograde)
+        self.t_houses_degree_ut = mh
+        self.t_houses_sign, self.t_houses_degree = self.split_sign_degree(mh)
+        #cached for the "Outer only" single-wheel view (makeSVG type
+        #MunProfection): unlike Atacir's stored arc this is not a rigid
+        #rotation, so there is nothing cheap to re-derive from at draw time
+        self.munprof_planets_degree_ut = list(mp)
+        self.munprof_houses_degree_ut = list(mh)
+        #reference date = requested date at the natal place (derived chart)
+        self.t_year = dt_utc.year
+        self.t_month = dt_utc.month
+        self.t_day = dt_utc.day
+        self.t_hour = self.decHourJoin(dt_utc.hour,dt_utc.minute,dt_utc.second)
+        self.t_geolon = self.geolon
+        self.t_geolat = self.geolat
+        self.t_altitude = self.altitude
+        self.solar_active = True
+        self.biwheel_single = "MunProfection"
+        self.type = "Transit"
+        direction = _(", converse") if converse else ""
+        openAstro.charttype="%s (%s-%02d-%02d, %s%s)" % (
+            _("Placidian Profection"), dt.year, dt.month, dt.day,
+            self.dec2deg(munprofection_engine.normalize(diff_lon)), direction)
+        openAstro.transit=True
+        return
+
     def localToAntiscia(self, contra=False):
         #Antiscia (Morinus antiscia.calc) como rueda exterior: el radix se
         #mantiene en self.* (rueda interior) y los antiscios —o los
@@ -2029,6 +2126,12 @@ class openAstroInstance:
             #(openastromod.harmonics); houses are left as radix
             module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
 
+        elif self.type == "MunProfection":
+            #single-wheel view of the Placidian mundane profection
+            #("Outer only" for the Atacir chart's Placidian mapping): the
+            #positions cached by localToMunProfection (see override below)
+            module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+
         elif self.type == "Transit" or self.type == "Composite":
             module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
             t_module_data = ephemeris.ephData(self.t_year,self.t_month,self.t_day,self.t_hour,self.t_geolon,self.t_geolat,self.t_altitude,self.planets,self.zodiac,db.astrocfg)
@@ -2146,6 +2249,30 @@ class openAstroInstance:
             hp = harmonics_engine.chart(self.planets_degree_ut, n)
             self.planets_degree_ut = hp
             self.planets_sign, self.planets_degree = self.split_sign_degree(hp)
+
+        if self.type == "MunProfection":
+            #single wheel ("Outer only"): the Placidian mundane profection
+            #is not a rigid rotation, so unlike Atacir there is no cheap
+            #re-derivation from the radix -- localToMunProfection cached the
+            #whole result once, and it is reused here as-is
+            mp = list(getattr(self, 'munprof_planets_degree_ut', self.planets_degree_ut))
+            mh = list(getattr(self, 'munprof_houses_degree_ut', self.houses_degree_ut))
+            self.planets_degree_ut = mp
+            self.planets_sign, self.planets_degree = self.split_sign_degree(mp)
+            self.houses_degree_ut = mh
+            self.houses_sign, self.houses_degree = self.split_sign_degree(mh)
+
+        if self.type == "Transit" and getattr(self, 'solar_active', False) and getattr(self, 'biwheel_single', '') == "MunProfection":
+            #bi-wheel: the Transit branch rewrites t_* from t_year (= natal
+            #date at the natal place), so the outer wheel is re-set here
+            #from the same cached result (inner wheel intact)
+            mp = list(getattr(self, 'munprof_planets_degree_ut', self.planets_degree_ut))
+            mh = list(getattr(self, 'munprof_houses_degree_ut', self.houses_degree_ut))
+            self.t_planets_degree_ut = mp
+            self.t_planets_sign, self.t_planets_degree = self.split_sign_degree(mp)
+            self.t_planets_retrograde = list(self.planets_retrograde)
+            self.t_houses_degree_ut = mh
+            self.t_houses_sign, self.t_houses_degree = self.split_sign_degree(mh)
 
         if self.type == "Directed":
             #rueda simple de direcciones primarias (vista "Outer only").
@@ -5153,6 +5280,22 @@ class mainWindow:
             hbox.pack_start(entry[k], False, False, 0)
         table.attach(hbox,0,1,1,2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
+        #mapping: Zodiacal (Demetrio Santos' atacir, a rigid rotation) or
+        #Placidian (Morinus' mundane profection, openastromod.munprofection
+        #-- relocates the chart and repositions each body by its own
+        #mundane speculum instead of turning the whole wheel by a constant
+        #arc). Placidian is always the same technique, so the cycle and
+        #rate controls below are not meaningful for it and get disabled.
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Mapping')+": "), False, False, 0)
+        self.atacir_mapping_list = ["zodiacal", "placidian"]
+        entry['X']=Gtk.ComboBoxText()
+        entry['X'].append_text(_("Zodiacal (rigid rotation)"))
+        entry['X'].append_text(_("Placidian (mundane profection)"))
+        entry['X'].set_active(1 if last('atacir_mapping', 'zodiacal') == 'placidian' else 0)
+        hbox.pack_start(entry['X'], False, False, 0)
+        table.attach(hbox,0,1,2,3, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
         #cycle: any integer in [1, 360]. C-12 is the reference cycle (annual
         #profections), C-360 the 1 deg/year symbolic directions. A rate
         #label next to the field says what the chosen cycle means.
@@ -5181,7 +5324,7 @@ class mainWindow:
             rate.set_text("  %d°%02d' %s  (%s)" % (d, m, _("per year"), turn))
         entry['C'].connect("value-changed", show_rate)
         show_rate()
-        table.attach(hbox,0,1,2,3, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+        table.attach(hbox,0,1,3,4, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
         #rate: the constant 360/N, or the progressed Sun's own travel.
         #Both turn the chart rigidly; only the source of the arc differs.
@@ -5193,18 +5336,25 @@ class mainWindow:
         entry['K'].append_text(_("Solar arc (progressed Sun)"))
         entry['K'].set_active(1 if last('atacir_key', 'cycle') == 'solar_arc' else 0)
         hbox.pack_start(entry['K'], False, False, 0)
-        table.attach(hbox,0,1,3,4, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+        table.attach(hbox,0,1,4,5, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
         def sync_rate(*_a):
-            #the cycle means nothing when the Sun supplies the arc
-            on = entry['K'].get_active() == 0
+            #the cycle means nothing when the Sun supplies the arc, or when
+            #the Placidian mapping is active (it is always the one
+            #technique: no cycle, no solar arc, just elapsed years)
+            zodiacal = entry['X'].get_active() == 0
+            on = zodiacal and entry['K'].get_active() == 0
             entry['C'].set_sensitive(on)
             rate.set_sensitive(on)
-            if on:
+            entry['K'].set_sensitive(zodiacal)
+            if not zodiacal:
+                rate.set_text("  %s" % (_("Placidian: relocates the chart, no fixed rate"),))
+            elif on:
                 show_rate()
             else:
                 rate.set_text("  %s" % (_("about 1° a year, from the ephemeris"),))
         entry['K'].connect("changed", sync_rate)
+        entry['X'].connect("changed", sync_rate)
 
         #direct or converse
         hbox = Gtk.HBox(spacing=4)
@@ -5214,11 +5364,11 @@ class mainWindow:
         entry['R'].append_text(_("Converse"))
         entry['R'].set_active(1 if last('atacir_dir', '0') == '1' else 0)
         hbox.pack_start(entry['R'], False, False, 0)
-        table.attach(hbox,0,1,4,5, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+        table.attach(hbox,0,1,5,6, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
         button = Gtk.Button(label=_("Submit"))
         button.connect("clicked", self.specialAtacirSubmit, entry)
-        table.attach(button,0,1,5,6, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+        table.attach(button,0,1,6,7, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
         sync_rate()
 
         self.win_SAT.vbox.pack_start(table, True, True, 0)
@@ -5233,14 +5383,19 @@ class mainWindow:
                 Gtk.ButtonsType.CLOSE,_("Enter a valid date (Y-M-D)"))
             md.run(); md.destroy()
             return
-        cycle = atacir_engine.valid_cycle(entry['C'].get_value_as_int())
+        mapping = self.atacir_mapping_list[entry['X'].get_active()]
         converse = entry['R'].get_active() == 1
-        key = self.atacir_key_list[entry['K'].get_active()]
         #remember last used parameters in astrocfg for the next run
-        db.setAstrocfg('atacir_cycle', str(cycle))
+        db.setAstrocfg('atacir_mapping', mapping)
         db.setAstrocfg('atacir_dir', '1' if converse else '0')
-        db.setAstrocfg('atacir_key', key)
-        openAstro.localToAtacir(dt, cycle, converse, key)
+        if mapping == 'placidian':
+            openAstro.localToMunProfection(dt, converse)
+        else:
+            cycle = atacir_engine.valid_cycle(entry['C'].get_value_as_int())
+            key = self.atacir_key_list[entry['K'].get_active()]
+            db.setAstrocfg('atacir_cycle', str(cycle))
+            db.setAstrocfg('atacir_key', key)
+            openAstro.localToAtacir(dt, cycle, converse, key)
         self.win_SAT.destroy()
         #a fresh atacir chart defaults to the bi-wheel view
         self._resetChartViewBoth()

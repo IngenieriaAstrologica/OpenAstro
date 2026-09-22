@@ -31,6 +31,9 @@ class OpenAstro(object):
     def localToAtacir(self, dt, cycle, converse, key):
         CALLS.append(('localToAtacir', dt, cycle, converse, key))
 
+    def localToMunProfection(self, dt, converse):
+        CALLS.append(('localToMunProfection', dt, converse))
+
     def makeSVG(self):
         CALLS.append(('makeSVG',))
 
@@ -79,6 +82,7 @@ R.check('cycle defaults to C-%d' % (atacir_engine.DEFAULT_CYCLE,),
         'C-%d' % entry['C'].get_value_as_int())
 R.check('direction defaults to Direct', entry['R'].get_active() == 0)
 R.check('rate defaults to the cycle', entry['K'].get_active() == 0)
+R.check('mapping defaults to Zodiacal', entry['X'].get_active() == 0)
 
 # ------------------------------------------- the rate label tracks the spinner
 # The label is the only feedback that says what a cycle means, and it is
@@ -122,9 +126,58 @@ R.check('the request reaches the engine',
 R.check('the chart is redrawn as a bi-wheel',
         Win._reset == 1 and ('updateChart',) in CALLS)
 R.note('stored in astrocfg: %s' % (dict(sorted(STORE.items())),))
-R.check('cycle, direction and rate persist',
+R.check('cycle, direction, rate and mapping persist',
         STORE == {'atacir_cycle': '24', 'atacir_dir': '1',
-                  'atacir_key': 'solar_arc'}, dict(STORE))
+                  'atacir_key': 'solar_arc', 'atacir_mapping': 'zodiacal'}, dict(STORE))
+
+# ------------------------------------------------------ the Placidian mapping
+# `w`'s dialog was destroyed by the submit above (specialAtacirSubmit ends
+# with self.win_SAT.destroy(), which takes every child widget down with
+# it -- entry's Gtk.Entry/ComboBoxText objects still exist as Python
+# objects but read back empty/unset once destroyed). A fresh dialog is
+# needed to keep testing.
+w4 = Win()
+entry4 = open_dialog(w4)
+entry4['Y'].set_text('2020')
+entry4['M'].set_text('12')
+entry4['D'].set_text('21')
+
+# Switching to Placidian should disable the cycle/rate controls (they mean
+# nothing for a fixed technique) and dispatch to localToMunProfection
+# instead of localToAtacir, without touching the cycle/rate astrocfg keys.
+entry4['X'].set_active(1)
+R.check('Placidian disables the cycle spinner', not entry4['C'].get_sensitive())
+R.check('Placidian disables the rate combo', not entry4['K'].get_sensitive())
+
+del CALLS[:]
+entry4['R'].set_active(0)          # direct
+w4.specialAtacirSubmit(None, entry4)
+R.note('with Placidian selected: %s' % (CALLS[0] if CALLS else None,))
+R.check('Placidian reaches localToMunProfection, not localToAtacir',
+        CALLS and CALLS[0] == ('localToMunProfection',
+                               datetime.datetime(2020, 12, 21), False), CALLS[:1])
+R.note('stored in astrocfg: %s' % (dict(sorted(STORE.items())),))
+R.check('mapping persists as placidian, cycle/rate untouched',
+        STORE == {'atacir_cycle': '24', 'atacir_dir': '0',
+                  'atacir_key': 'solar_arc', 'atacir_mapping': 'placidian'}, dict(STORE))
+
+# a Zodiacal submit afterwards restores the astrocfg state the "reopening
+# restores the rest" block below expects
+w5 = Win()
+entry5 = open_dialog(w5)
+R.check('reopening after Placidian offers Placidian as the mapping',
+        entry5['X'].get_active() == 1, entry5['X'].get_active())
+entry5['Y'].set_text('2020')
+entry5['M'].set_text('12')
+entry5['D'].set_text('21')
+entry5['X'].set_active(0)
+entry5['K'].set_active(0)          # rate: cycle (constant), not solar arc
+R.check('back to Zodiacal with a fixed rate re-enables the cycle spinner',
+        entry5['C'].get_sensitive())
+entry5['C'].set_value(24)
+entry5['K'].set_active(1)
+entry5['R'].set_active(1)
+w5.specialAtacirSubmit(None, entry5)
 
 # ------------------------------------------------- reopening restores the rest
 w2 = Win()
