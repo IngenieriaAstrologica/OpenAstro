@@ -117,6 +117,9 @@ VIA_STATE = [
     ("harmogram-transits", "tableHarmogramShow", "tHGentry",
      {"C": datetime.datetime(2026, 9, 21, 12, 0), "days": 16, "ppd": 12,
       "mode": "transits"}),
+    ("mundane", "tableMundaneShow", "tMUentry",
+     {"F": datetime.datetime(2026, 1, 1), "T": datetime.datetime(2027, 1, 1),
+      "categories": ("ingress_sun", "lunation", "eclipse")}),
 ]
 
 fails = []

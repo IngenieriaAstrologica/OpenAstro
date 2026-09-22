@@ -53,7 +53,7 @@ from gi.repository import Gtk, Gdk, GLib, GObject, Rsvg, cairo
 #internal openastro modules
 sys.path.append("/usr/lib/python3.5/dist-packages") #trying to 'fix' some problems importing openastromod on some distros
 sys.path.append("/usr/lib/python3.5/site-packages") #trying to 'fix' some problems importing openastromod on some distros
-from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine, transit as transit_engine, cyclic as cyclic_engine, harmogram as harmogram_engine, harmonicvector as harmonicvector_engine
+from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine, transit as transit_engine, cyclic as cyclic_engine, harmogram as harmogram_engine, harmonicvector as harmonicvector_engine, mundane as mundane_engine
 
 def _rsvg_render(handle, cr):
     """Render a whole SVG handle at its natural size onto a Cairo context,
@@ -4086,6 +4086,7 @@ class mainWindow:
         tables_menu.append(mi(_('Arabic Parts'), self.tableArabicParts, 'ArabicParts'))
         tables_menu.append(mi(_('Profections'), self.tableProfections, 'Profections'))
         tables_menu.append(mi(_('Cyclic Index'), self.tableCyclicIndex, 'CyclicIndex'))
+        tables_menu.append(mi(_('Ingresses, Lunations, Eclipses'), self.tableMundane, 'Mundane'))
         tables_menu.append(mi(_('Harmogram'), self.tableHarmogram, 'Harmogram'))
         tables_menu.append(mi(_('Harmonic Flower'), self.tableHarmonicFlower, 'HarmonicFlower'))
         menubar.append(tables_top)
@@ -5272,6 +5273,12 @@ class mainWindow:
             _rsvg_render(svg, cr)
         elif(self.tabletype == "harmogram"):
             self.tableHarmogramShow(printing)
+            #draw svg for printing
+            svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
+            svg.set_dpi(900)
+            _rsvg_render(svg, cr)
+        elif(self.tabletype == "mundane"):
+            self.tableMundaneShow(printing)
             #draw svg for printing
             svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
             svg.set_dpi(900)
@@ -6873,6 +6880,264 @@ class mainWindow:
             self.win_TCI.show_all()
         return
 
+    def tableMundane(self, widget):
+        #Ingresses, lunations, eclipses: a mundane calendar over a date
+        #range (openastromod/mundane.py). Dates never persist (every
+        #technique dialog opens on the current moment, per CLAUDE.md); the
+        #category checkboxes do, like Harmogram's reading mode.
+        dialog = Gtk.Dialog(_("Ingresses, Lunations, Eclipses"),
+                     self.window,
+                     0,
+                     (_("_Cancel"), Gtk.ResponseType.REJECT,
+                      _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog.set_destroy_with_parent(True)
+        dialog.connect("destroy", lambda w: dialog.destroy())
+        dialog.set_border_width(5)
+        dialog.move(50,50)
+        now = datetime.datetime.now()
+        self.tMUwidget={}
+
+        def last(key, default):
+            val = db.getAstrocfg(key)
+            return val if val is not None else default
+
+        #From/To, defaulting to the current calendar year
+        for k, lbl, default in (('F', 'From', datetime.date(now.year, 1, 1)),
+                                 ('T', 'To', datetime.date(now.year + 1, 1, 1))):
+            dialog.vbox.pack_start(Gtk.Label(label=_(lbl)+":"), False, False, 2)
+            hbox = Gtk.HBox(spacing=4)
+            for f, sub, ln, val in (('Y', 'Year', 4, default.year),
+                                     ('M', 'Month', 2, default.month),
+                                     ('D', 'Day', 2, default.day)):
+                hbox.pack_start(Gtk.Label(label=_(sub)+": "), False, False, 0)
+                w = Gtk.Entry()
+                w.set_max_length(ln)
+                w.set_width_chars(ln)
+                w.set_text(str(val))
+                self.tMUwidget[k+f] = w
+                hbox.pack_start(w, False, False, 0)
+            dialog.vbox.pack_start(hbox, False, False, 2)
+
+        #categories -- Sun ingresses and lunations and eclipses on by
+        #default; Moon ingresses off, since it alone runs to ~150 rows a
+        #year (see openastromod/mundane.py's module docstring)
+        dialog.vbox.pack_start(Gtk.Label(label=_('Include')+":"), False, False, 2)
+        cat_defs = (('ingress_sun', _('Solar ingresses (equinoxes, solstices, monthly)'), '1'),
+                    ('ingress_moon', _('Lunar ingresses (Moon changes sign, ~13/month)'), '0'),
+                    ('lunation', _('Lunations (new and full moon)'), '1'),
+                    ('eclipse', _('Eclipses (solar and lunar)'), '1'))
+        for key, label, default in cat_defs:
+            cb = Gtk.CheckButton(label=label)
+            cb.set_active(last('mundane_%s' % (key,), default) == '1')
+            dialog.vbox.pack_start(cb, False, False, 0)
+            self.tMUwidget[key] = cb
+        dialog.show_all()
+
+        ret = dialog.run()
+        if ret != Gtk.ResponseType.ACCEPT:
+            dialog.destroy()
+            return
+        try:
+            dt_from = datetime.datetime(
+                int(self.tMUwidget['FY'].get_text()), int(self.tMUwidget['FM'].get_text()),
+                int(self.tMUwidget['FD'].get_text()))
+            dt_to = datetime.datetime(
+                int(self.tMUwidget['TY'].get_text()), int(self.tMUwidget['TM'].get_text()),
+                int(self.tMUwidget['TD'].get_text()))
+        except ValueError:
+            dialog.destroy()
+            md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("From and To must be valid dates"))
+            md.run(); md.destroy()
+            return
+        categories = tuple(key for key, label, default in cat_defs
+                            if self.tMUwidget[key].get_active())
+        #span guard: solar+lunations+eclipses are a few hundred rows a
+        #decade, but Moon ingresses alone run ~150/year -- 40 years of it
+        #is ~6000 rows, right at openastromod.mundane's own safety cap
+        span_days = (dt_to - dt_from).days
+        if dt_to <= dt_from or span_days > 40 * 365:
+            dialog.destroy()
+            md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,
+                _("To must be after From, and the span must not exceed 40 years"))
+            md.run(); md.destroy()
+            return
+        if not categories:
+            dialog.destroy()
+            md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Select at least one category to include"))
+            md.run(); md.destroy()
+            return
+        dialog.destroy()
+        for key, label, default in cat_defs:
+            db.setAstrocfg('mundane_%s' % (key,), '1' if key in categories else '0')
+        self.tMUentry = {'F': dt_from, 'T': dt_to, 'categories': categories}
+        self.tableMundaneShow()
+        return
+
+    def tableMundaneShow(self, printing=None):
+        #Ingresses, lunations and eclipses, listed in date order. See
+        #openastromod/mundane.py for the search itself -- this half only
+        #formats what it returns into a paginated text table, the same
+        #shape as the Fixed Stars table and the Cyclic Index turning-point
+        #list this was modelled on.
+        self.tabletype="mundane"
+        try:
+            dt_from = self.tMUentry['F']
+            dt_to = self.tMUentry['T']
+            categories = self.tMUentry['categories']
+        except (AttributeError, KeyError, TypeError):
+            return
+
+        rows = mundane_engine.search(dt_from, dt_to, categories=categories)
+
+        def planet_label(i):
+            try:
+                return openAstro.planets[i]['label']
+            except (IndexError, KeyError):
+                return str(i)
+
+        def sign_label(s):
+            try:
+                return openAstro.zodiac[s].capitalize()
+            except IndexError:
+                return str(s)
+
+        def describe(r):
+            if r['category'] in ('ingress_sun', 'ingress_moon'):
+                return _("%s enters %s") % (planet_label(r['planet']), sign_label(r['sign']))
+            elif r['category'] == 'lunation':
+                kind = _("New Moon") if r['kind'] == 'new' else _("Full Moon")
+                return "%s (%s)" % (kind, sign_label(r['sign']))
+            else:
+                body = _("Solar") if r['body'] == 'sun' else _("Lunar")
+                kindmap = {'total': _('total'), 'partial': _('partial'),
+                    'annular': _('annular'), 'hybrid': _('hybrid'),
+                    'penumbral': _('penumbral')}
+                return _("%s eclipse (%s)") % (body, kindmap.get(r['kind'], r['kind']))
+
+        def category_label(cat):
+            return {'ingress_sun': _('Ingress'), 'ingress_moon': _('Ingress'),
+                'lunation': _('Lunation'), 'eclipse': _('Eclipse')}.get(cat, cat)
+
+        ink = openAstro.colors['paper_0']
+        textstyle = "font-size: 12px; fill: %s" % (ink,)
+        headerstyle = "font-size: 13px; font-weight: bold; fill: %s" % (ink,)
+        captionstyle = "font-size: 10px; fill: %s" % (ink,)
+        gridstyle = 'stroke:%s; stroke-width: 1px; stroke-opacity:.6; fill:none' % (ink,)
+
+        ROW_H = 22.0
+        TOP_INSET = 70.0
+        BOTTOM_INSET = 40.0
+        PAGE_H = 1188.0
+        PITCH = 1198.0
+        col_date, col_cat, col_detail = 0, 130, 230
+
+        def page_y(p):
+            return p * PITCH - 40.0
+
+        def headers(y):
+            h = '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_date, y, headerstyle, _("Date (UT)"))
+            h += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_cat, y, headerstyle, _("Kind"))
+            h += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_detail, y, headerstyle, _("Event"))
+            return h
+
+        out = '<g>'
+        out += '<text x="0" y="%s" style="%s">%s - %s \xb7 %d %s</text>\n' % (
+            page_y(0) + 54, captionstyle, dt_from.strftime('%Y-%m-%d'), dt_to.strftime('%Y-%m-%d'),
+            len(rows), _("events"))
+
+        page = 0
+        y = page_y(page) + TOP_INSET + 20.0
+        limit = page_y(page) + PAGE_H - BOTTOM_INSET
+        out += headers(y)
+        if not rows:
+            y += ROW_H
+            out += '<text x="0" y="%s" style="%s">%s</text>\n' % (
+                y, textstyle, _("No events in this range with the categories selected"))
+        for r in rows:
+            y += ROW_H
+            if y > limit:
+                page += 1
+                y = page_y(page) + TOP_INSET + 20.0
+                limit = page_y(page) + PAGE_H - BOTTOM_INSET
+                out += headers(y)
+                y += ROW_H
+            out += '<rect x="-15" y="%s" width="805" height="%s" style="%s"/>\n' % (
+                y - 15, ROW_H - 4, gridstyle)
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (
+                col_date, y, textstyle, r['date'].strftime('%Y-%m-%d %H:%M'))
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (
+                col_cat, y, textstyle, category_label(r['category']))
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (
+                col_detail, y, textstyle, describe(r))
+        out += "</g>"
+        pages = page + 1
+
+        td = {}
+        td['paper_color_0']=openAstro.colors["paper_0"]
+        td['paper_color_1']=openAstro.colors["paper_1"]
+        for i in range(len(openAstro.planets)):
+            td['planets_color_%s'%(i)]=openAstro.colors["planet_%s"%(i)]
+        for i in range(12):
+            td['zodiac_color_%s'%(i)]=openAstro.colors["zodiac_icon_%s" %(i)]
+        for i in range(len(openAstro.aspects)):
+            td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
+        td['stringTitle'] = "Ingresses, Lunations, Eclipses %s - %s"%(
+            dt_from.strftime('%Y-%m-%d'), dt_to.strftime('%Y-%m-%d'))
+
+        pagesY = (1188 * pages)+10
+        if printing:
+            td['svgWidth'] = printing['width']
+            td['svgHeight'] = printing['height']
+            td['viewbox'] = "0 %s 840 1188" %( printing['pagenum']*(1188+10) )
+        else:
+            td['svgWidth'] = 1050
+            td['svgHeight'] = (td['svgWidth']/840.0)* pagesY
+            td['viewbox'] = "0 0 840 %s" %( pagesY )
+
+        td['data'] = out
+        td['pagesRect'] = ''.join(
+            '<rect x="0" y="%s" width="840" height="1188" style="fill: %s;" />' % (
+                p * (1188 + 10), openAstro.colors['paper_1'])
+            for p in range(pages))
+
+        f=open(cfg.xml_svg_table)
+        template=Template(f.read()).substitute(td)
+        f.close()
+        if printing:
+            f=open(cfg.tempfilenametableprint,"w")
+        else:
+            f=open(cfg.tempfilenametable,"w")
+        f.write(template)
+        f.close()
+
+        if printing == None:
+            self.win_TMU = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+            self.win_TMU.connect("destroy", lambda w: self.win_TMU.destroy())
+            self.win_TMU.set_title("OpenAstro.org Ingresses, Lunations, Eclipses")
+            self.win_TMU.set_icon_from_file(cfg.iconWindow)
+            self.win_TMU.set_size_request(td['svgWidth']+30, 700)
+            self.win_TMU.move(50,50)
+            vbox = Gtk.VBox()
+            hbox = Gtk.HBox()
+            button = Gtk.Button(label=_('Print'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=False,window=self.win_TMU,name="mundane-%s-%s.pdf"%(dt_from.strftime('%Y%m%d'),dt_to.strftime('%Y%m%d'))))
+            hbox.pack_start(button,False,False,0)
+            button = Gtk.Button(label=_('Save as PDF'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=True,window=self.win_TMU,name="mundane-%s-%s.pdf"%(dt_from.strftime('%Y%m%d'),dt_to.strftime('%Y%m%d'))))
+            hbox.pack_start(button,False,False,0)
+            vbox.pack_start(hbox,False,False,0)
+            draw = drawSVG()
+            draw.setSVG(cfg.tempfilenametable)
+            scrolledwindow = Gtk.ScrolledWindow()
+            scrolledwindow.add(draw)
+            scrolledwindow.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            vbox.pack_start(scrolledwindow,True,True,0)
+            self.win_TMU.add(vbox)
+            self.win_TMU.show_all()
+        return
 
     def tableHarmogram(self, widget):
         #Harmogram: how loud each of the first twelve harmonics is, traced
