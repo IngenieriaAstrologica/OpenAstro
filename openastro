@@ -53,7 +53,7 @@ from gi.repository import Gtk, Gdk, GLib, GObject, Rsvg, cairo
 #internal openastro modules
 sys.path.append("/usr/lib/python3.5/dist-packages") #trying to 'fix' some problems importing openastromod on some distros
 sys.path.append("/usr/lib/python3.5/site-packages") #trying to 'fix' some problems importing openastromod on some distros
-from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine, transit as transit_engine, cyclic as cyclic_engine, harmogram as harmogram_engine, harmonicvector as harmonicvector_engine
+from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine, transit as transit_engine, cyclic as cyclic_engine, harmogram as harmogram_engine, harmonicvector as harmonicvector_engine, harmonics as harmonics_engine
 
 def _rsvg_render(handle, cr):
     """Render a whole SVG handle at its natural size onto a Cairo context,
@@ -1445,6 +1445,9 @@ class openAstroInstance:
         #or "TransitOuter")
         self.solar_active=False
         self.biwheel_single="Solar"
+        #harmonic chart order N (openastromod.harmonics): a pure single
+        #wheel, no bi-wheel state needed -- see localToHarmonic below
+        self.harmonic_n=harmonics_engine.DEFAULT_HARMONIC
         #transit measure: ecliptic longitudes (default) or ascensional
         #(mundo contacts by OA equality under the transit pole); the
         #dialog remembers the last choice in astrocfg like the directions one
@@ -1806,6 +1809,27 @@ class openAstroInstance:
         openAstro.transit=True
         return
 
+    def localToHarmonic(self, n):
+        #Harmonic chart (openastromod.harmonics): every radix longitude
+        #multiplied by N, folded mod 360. Unlike Dodecatemoria/Antiscia/
+        #Atacir/Directed above, this is not shown as a bi-wheel outer ring
+        #over the radix -- it is a whole chart on its own, so it draws
+        #straight through type "Harmonic" (see makeSVG) instead of the
+        #solar_active/biwheel_single/type="Transit" machinery those reuse.
+        #No new moment either: it derives entirely from the radix, so
+        #there is nothing to remember but N itself.
+        #Houses stay radical -- multiplying cusps by N does not keep them
+        #in ecliptic order, see harmonics.py's module docstring -- so only
+        #self.type changes here; makeSVG overrides the planet longitudes,
+        #never the houses.
+        n = harmonics_engine.valid_harmonic(n)
+        self.harmonic_n = n
+        self.solar_active = False
+        self.type = "Harmonic"
+        openAstro.charttype = "%s %d (%s)" % (_("Harmonic"), n, openAstro.name)
+        openAstro.transit = False
+        return
+
     def localToDirected(self, dt, key="naibod", converse=False, measure="ecl_ecl"):
         #Direcciones primarias topocentricas (sistema Polich-Page, motor
         #openastromod.primary) como rueda exterior: el radix se mantiene en
@@ -1998,6 +2022,13 @@ class openAstroInstance:
             #(see override below)
             module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
 
+        elif self.type == "Harmonic":
+            #Nth harmonic chart: a genuine single wheel, not an "Outer
+            #only" view of a bi-wheel -- the radix at the birth moment,
+            #then the planet longitudes are overridden below
+            #(openastromod.harmonics); houses are left as radix
+            module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+
         elif self.type == "Transit" or self.type == "Composite":
             module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
             t_module_data = ephemeris.ephData(self.t_year,self.t_month,self.t_day,self.t_hour,self.t_geolon,self.t_geolat,self.t_altitude,self.planets,self.zodiac,db.astrocfg)
@@ -2105,6 +2136,16 @@ class openAstroInstance:
             self.t_planets_retrograde = list(self.planets_retrograde)
             self.t_houses_degree_ut = ah
             self.t_houses_sign, self.t_houses_degree = self.split_sign_degree(ah)
+
+        if self.type == "Harmonic":
+            #Nth harmonic: every planet longitude * N, folded mod 360
+            #(openastromod.harmonics.chart). Houses are deliberately left
+            #untouched -- radical, not multiplied -- see harmonics.py's
+            #module docstring for why cusps cannot go through this map.
+            n = harmonics_engine.valid_harmonic(getattr(self, 'harmonic_n', harmonics_engine.DEFAULT_HARMONIC))
+            hp = harmonics_engine.chart(self.planets_degree_ut, n)
+            self.planets_degree_ut = hp
+            self.planets_sign, self.planets_degree = self.split_sign_degree(hp)
 
         if self.type == "Directed":
             #rueda simple de direcciones primarias (vista "Outer only").
@@ -4106,9 +4147,12 @@ class mainWindow:
         special_menu.append(mi(_('Antiscia Chart'), self.specialAntiscia, 'Antiscia'))
         special_menu.append(mi(_('Primary Directions'), self.specialDirected, 'Directed'))
         special_menu.append(mi(_('Atacir Chart'), self.specialAtacir, 'Atacir'))
+        special_menu.append(mi(_('Harmonic Chart'), self.specialHarmonic, 'Harmonic'))
         #bi-wheel view selector for Solar Return / Lunar Return /
         #Secondary Progression / Transit Chart / Synastry / Dodecatemoria /
-        #Antiscia / Primary Directions / Atacir: both, natal (inner) only, or outer only
+        #Antiscia / Primary Directions / Atacir: both, natal (inner) only, or outer only.
+        #The Harmonic Chart is not part of this group -- it is a single
+        #wheel from the start, so it has nothing for "Chart View" to switch.
         special_menu.append(Gtk.SeparatorMenuItem())
         srv_top, srv_menu = submenu(_('Chart View'))
         srv_group = None
@@ -5202,6 +5246,64 @@ class mainWindow:
         self.updateChart()
         return
 
+    def specialHarmonic(self, widget):
+        #dialog: a single spin button for the harmonic order N (every radix
+        #longitude multiplied by N, folded mod 360 -- see
+        #openastromod/harmonics.py). No date to pick: like Dodecatemoria
+        #and Antiscia, it derives entirely from the radix, and unlike those
+        #it draws as a single wheel from the start, so there is no
+        #inner/outer view to offer either.
+        self.win_SH = Gtk.Dialog(parent=self.window)
+        self.win_SH.set_icon_from_file(cfg.iconWindow)
+        self.win_SH.set_title(_("Harmonic Chart"))
+        self.win_SH.connect("delete_event", lambda w,e: self.win_SH.destroy())
+        self.win_SH.move(150,150)
+        self.win_SH.set_border_width(5)
+        self.win_SH.set_size_request(300,120)
+
+        table = Gtk.Table(n_rows=1, n_columns=1, homogeneous=False)
+        table.set_border_width(10)
+
+        #harmonic order: any integer in [MIN_HARMONIC, MAX_HARMONIC], the
+        #same range the engine itself accepts (see harmonics.py for why
+        #360 -- a generous ceiling, not a structural limit like the atacir
+        #cycle's). Last used value is remembered in astrocfg.
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Harmonic')+": "), False, False, 0)
+        entry=Gtk.SpinButton()
+        last_n = db.getAstrocfg('harmonic_n')
+        entry.set_adjustment(Gtk.Adjustment(
+            value=harmonics_engine.valid_harmonic(last_n if last_n is not None else harmonics_engine.DEFAULT_HARMONIC),
+            lower=harmonics_engine.MIN_HARMONIC, upper=harmonics_engine.MAX_HARMONIC,
+            step_increment=1, page_increment=10))
+        entry.set_numeric(True)
+        entry.set_width_chars(4)
+        hbox.pack_start(entry, False, False, 0)
+        table.attach(hbox,0,1,0,1, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        self.win_SH.vbox.pack_start(table, True, True, 0)
+
+        button = Gtk.Button.new_with_mnemonic(_("_OK"))
+        button.connect("clicked", self.specialHarmonicSubmit, entry)
+        button.set_can_default(True)
+        self.win_SH.action_area.pack_start(button, True, True, 0)
+        button.grab_default()
+
+        button = Gtk.Button.new_with_mnemonic(_("_Cancel"))
+        button.connect("clicked", lambda w: self.win_SH.destroy())
+        self.win_SH.action_area.pack_start(button, True, True, 0)
+
+        self.win_SH.show_all()
+        return
+
+    def specialHarmonicSubmit(self, widget, entry):
+        n = harmonics_engine.valid_harmonic(entry.get_value_as_int())
+        #remember the last used harmonic order in astrocfg for the next run
+        db.setAstrocfg('harmonic_n', str(n))
+        openAstro.localToHarmonic(n)
+        self.win_SH.destroy()
+        self.updateChart()
+        return
 
     def tableMonthlyTimeline(self, widget):
         dialog = Gtk.Dialog(_("Select Month"),
