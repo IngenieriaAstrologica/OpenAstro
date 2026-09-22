@@ -1449,6 +1449,11 @@ class openAstroInstance:
         #(mundo contacts by OA equality under the transit pole); the
         #dialog remembers the last choice in astrocfg like the directions one
         self.transit_measure="ecliptic"
+        #transit target: which natal reference point the transiting planets
+        #are compared against -- true natal position (default), antiscion or
+        #contra-antiscion (Morinus transits.py Transit.ANTISCION /
+        #.CONTRAANTISCION); also remembered in astrocfg
+        self.transit_target="natal"
         #transit direction: direct (the sky of the requested moment) or
         #converse (that moment mirrored about the birth instant)
         self.transit_converse=False
@@ -1865,7 +1870,7 @@ class openAstroInstance:
         openAstro.transit=True
         return
 
-    def localToTransit(self, dt_local=None, converse=False, measure="ecliptic"):
+    def localToTransit(self, dt_local=None, converse=False, measure="ecliptic", target="natal"):
         #Transits as the outer wheel: the radix stays in self.* (inner wheel)
         #and the sky of the requested moment is copied into self.t_* (outer
         #wheel), which is a plain ephemeris reading -- the only question a
@@ -1876,9 +1881,14 @@ class openAstroInstance:
         #openastromod/transit.py (primary directions and atacires negate an
         #arc that is linear in elapsed time, which is the same statement).
         #measure: ecliptic longitudes or ascensional (mundo) contacts.
+        #target: which natal point the transiting planets are compared
+        #against -- true natal position, antiscion or contra-antiscion.
         if measure not in primary_engine.TRANSIT_MEASURE_KEYS:
             measure = "ecliptic"
         self.transit_measure = measure
+        if target not in primary_engine.TRANSIT_TARGET_KEYS:
+            target = "natal"
+        self.transit_target = target
 
         #the transit is read from the home place, as before
         self.t_geolon = float(self.home_geolon)
@@ -1910,15 +1920,16 @@ class openAstroInstance:
         self.biwheel_single = "TransitOuter"
         self.type = "Transit"
         measure_tag = primary_engine.TRANSIT_MEASURE_TAGS[measure]
+        target_tag = primary_engine.TRANSIT_TARGET_TAGS[target]
         if converse:
             #name both moments: the one asked for and the sky actually drawn
             direction = "%s %04d-%02d-%02d %02d:%02d" % (_(", converse, sky at"),
                 sky_local.year,sky_local.month,sky_local.day,sky_local.hour,sky_local.minute)
         else:
             direction = ""
-        self.charttype = "%s (%s-%02d-%02d %02d:%02d%s%s)" % (self.label["transit"],
+        self.charttype = "%s (%s-%02d-%02d %02d:%02d%s%s%s)" % (self.label["transit"],
             dt_local.year,dt_local.month,dt_local.day,dt_local.hour,dt_local.minute,
-            direction,measure_tag)
+            direction,measure_tag,target_tag)
         self.transit = True
         return
 
@@ -3410,7 +3421,25 @@ class openAstroInstance:
         measure = getattr(self, 'transit_measure', 'ecliptic')
         if measure not in primary_engine.TRANSIT_MEASURE_KEYS:
             measure = 'ecliptic'
-        asc = (measure == 'ascensional' and getattr(self, 'solar_active', False)
+        #transit target: which natal point the transiting planets are
+        #compared against. "antiscion"/"contraantiscion" swap in the
+        #precomputed natal antiscia lists (makeSVG, Morinus antiscia.calc);
+        #the transiting body itself is always its own TRUE longitude
+        #(Morinus transits.py Transit.ANTISCION/.CONTRAANTISCION compare the
+        #transiting planet's true position, never its own antiscion). Since
+        #an antiscion point has no defined latitude, the ascensional (mundo)
+        #measure only applies to the natal target -- Morinus never pairs
+        #ascensional contacts with antiscia either.
+        target = getattr(self, 'transit_target', 'natal')
+        if target not in primary_engine.TRANSIT_TARGET_KEYS:
+            target = 'natal'
+        if target == 'antiscion':
+            natal_targets = list(getattr(self, 'planets_antiscia_ut', self.planets_degree_ut))
+        elif target == 'contraantiscion':
+            natal_targets = list(getattr(self, 'planets_contra_ut', self.planets_degree_ut))
+        else:
+            natal_targets = self.planets_degree_ut
+        asc = (measure == 'ascensional' and target == 'natal' and getattr(self, 'solar_active', False)
             and getattr(self, 'biwheel_single', '') == "TransitOuter")
         if asc:
             natal_lat = list(getattr(self, 'planets_latitude', []))
@@ -3420,7 +3449,7 @@ class openAstroInstance:
             jd_t = float(getattr(self, 't_jd', jd_n))
             geo_lat = float(self.geolat)
         for i in range(len(self.planets)):
-            start=self.planets_degree_ut[i]
+            start=natal_targets[i]
             for x in range(i+1):
                 end=self.t_planets_degree_ut[x]
                 if asc:
@@ -4465,8 +4494,9 @@ class mainWindow:
             
     def specialTransit(self, widget):
         #dialog asks the date and time of the transit, the direction
-        #(direct or converse) and the measure (ecliptic longitudes or
-        #ascensional mundo contacts), then draws the bi-wheel: radix
+        #(direct or converse), the measure (ecliptic longitudes or
+        #ascensional mundo contacts) and the target (natal positions,
+        #antiscia or contra-antiscia), then draws the bi-wheel: radix
         #inside, transit outside. Last used values are kept in astrocfg;
         #"Now" puts the current moment back in the fields.
         self.win_ST = Gtk.Dialog(parent=self.window)
@@ -4475,7 +4505,7 @@ class mainWindow:
         self.win_ST.connect("delete_event", lambda w,e: self.win_ST.destroy())
         self.win_ST.move(150,150)
         self.win_ST.set_border_width(5)
-        self.win_ST.set_size_request(360,260)
+        self.win_ST.set_size_request(360,300)
 
         table = Gtk.Table(n_rows=1, n_columns=4, homogeneous=False)
         table.set_border_width(10)
@@ -4548,6 +4578,22 @@ class mainWindow:
         hbox.pack_start(entry['S'], False, False, 0)
         table.attach(hbox,0,1,4,5, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
+        #target: natal true positions (default), or the natal antiscia /
+        #contra-antiscia points (Morinus transits.py Transit.ANTISCION /
+        #.CONTRAANTISCION) -- which transiting planets aspect the natal
+        #antiscia rather than the natal planets themselves
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Target')+": "), False, False, 0)
+        self.transit_target_list = ["natal", "antiscion", "contraantiscion"]
+        entry['T'] = Gtk.ComboBoxText.new()
+        entry['T'].append_text(_("Natal positions"))
+        entry['T'].append_text(_("Antiscia"))
+        entry['T'].append_text(_("Contra-antiscia"))
+        last_target = last('transit_target', "natal")
+        entry['T'].set_active(self.transit_target_list.index(last_target) if last_target in self.transit_target_list else 0)
+        hbox.pack_start(entry['T'], False, False, 0)
+        table.attach(hbox,0,1,5,6, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
         self.win_ST.vbox.pack_start(table, True, True, 0)
 
         button = Gtk.Button.new_with_mnemonic(_("_OK"))
@@ -4583,10 +4629,14 @@ class mainWindow:
         measure = self.transit_measure_list[entry['S'].get_active()]
         if measure not in primary_engine.TRANSIT_MEASURE_KEYS:
             measure = "ecliptic"
+        target = self.transit_target_list[entry['T'].get_active()]
+        if target not in primary_engine.TRANSIT_TARGET_KEYS:
+            target = "natal"
         #remember last used parameters in astrocfg for the next run
         db.setAstrocfg('transit_dir', '1' if converse else '0')
         db.setAstrocfg('transit_measure', measure)
-        openAstro.localToTransit(dt_local, converse, measure)
+        db.setAstrocfg('transit_target', target)
+        openAstro.localToTransit(dt_local, converse, measure, target)
         self.win_ST.destroy()
         #a fresh transit chart defaults to the bi-wheel view
         self._resetChartViewBoth()
@@ -7733,11 +7783,17 @@ class mainWindow:
             openAstro.solar_active=True
             openAstro.biwheel_single="TransitOuter"
             #synastry reuses the transit aspects: follow the saved transit
-            #measure (ecliptic default) so mundo synastry works the same way
+            #measure (ecliptic default) so mundo synastry works the same way,
+            #and likewise the saved target (natal default) so a synastry
+            #partner's planets can be checked against this chart's antiscia
             saved_measure = db.getAstrocfg('transit_measure')
             if saved_measure not in primary_engine.TRANSIT_MEASURE_KEYS:
                 saved_measure = "ecliptic"
             openAstro.transit_measure = saved_measure
+            saved_target = db.getAstrocfg('transit_target')
+            if saved_target not in primary_engine.TRANSIT_TARGET_KEYS:
+                saved_target = "natal"
+            openAstro.transit_target = saved_target
             openAstro.t_name=str(list["name"])
             openAstro.t_year=int(list["year"])
             openAstro.t_month=int(list["month"])
