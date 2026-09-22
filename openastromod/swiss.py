@@ -768,6 +768,46 @@ class ephData:
 		self.planets_speed[29] = self.planets_speed[10]
 		self.planets_stationary[29] = self.planets_stationary[10]
 
+		#draconic chart: rotate every longitude so the Mean Node (index 10,
+		#already computed above) sits at 0deg. Same shape as the sidereal
+		#ayanamsa shift earlier in this constructor -- a whole-chart rigid
+		#rotation -- except the reference point is this date's own Mean
+		#Node longitude rather than a fixed ayanamsa table value, and it is
+		#applied here, after bodies/angles/lots/nodes are all in place, so
+		#it reaches every one of them plus the house cusps in one pass.
+		#Checked against carta-natal.es's /draconica/ (Sep-2026): "todos los
+		#puntos de la carta se desplazan uniformemente en base al angulo
+		#draconico fundamental, siendo los aspectos los mismos y las
+		#posiciones por casas las mismas" -- whole chart, houses and angles
+		#included, aspects unchanged, confirming a rigid rotation is right.
+		#That page also lets the user pick true node instead of mean
+		#("Hay cierta controversia en si utilizar el nodo verdadero o el
+		#nodo medio... tienes la posibilidad de utilizar tanto uno como
+		#otro"); this implementation uses the Mean Node only, both because
+		#that is the more common default and because it is the node this
+		#codebase already computes (index 10) -- a True Node toggle is a
+		#natural follow-up, not implemented here.
+		self.mean_node_longitude = self.planets_degree_ut[10]
+		self.draconic_mode = (openastrocfg['zodiactype'] == "draconic")
+		if self.draconic_mode:
+			mn_lon = self.mean_node_longitude
+			for i in range(len(self.planets_degree_ut)):
+				self.planets_degree_ut[i] = normalize_dodec(self.planets_degree_ut[i] - mn_lon)
+			for i in range(len(self.houses_degree_ut)):
+				self.houses_degree_ut[i] = normalize_dodec(self.houses_degree_ut[i] - mn_lon)
+			#re-derive sign/degree-in-sign now that the longitudes moved;
+			#retrograde/speed/stationary are frame-independent and unchanged
+			for i in range(len(self.planets_degree_ut)):
+				lon = self.planets_degree_ut[i]
+				s = int(lon // 30.0) % 12
+				self.planets_sign[i] = s
+				self.planets_degree[i] = lon - s * 30.0
+			for i in range(len(self.houses_degree_ut)):
+				lon = self.houses_degree_ut[i]
+				s = int(lon // 30.0) % 12
+				self.houses_sign[i] = s
+				self.houses_degree[i] = lon - s * 30.0
+
 		#lunar phase, anti-clockwise degrees between sun and moon
 		# --- Dodecatemorias (Morinus antiscia.calcDodecatemoria) ---
 		# Longitud dodecatemoria para cada cuerpo y cada cuspide.

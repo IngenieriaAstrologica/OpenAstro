@@ -2214,6 +2214,7 @@ class openAstroInstance:
         #sobre las longitudes finales para que el modo Composite tambien
         #sea correcto (los antiscios son tropicales por definicion)
         self.ayanamsa = float(getattr(module_data, 'ayanamsa', 0.0))
+        self.mean_node_longitude = float(getattr(module_data, 'mean_node_longitude', 0.0))
         ant = [ephemeris.calc_antiscion(v, self.ayanamsa) for v in self.planets_degree_ut]
         self.planets_antiscia_ut = [a for a, c in ant]
         self.planets_contra_ut = [c for a, c in ant]
@@ -2358,6 +2359,9 @@ class openAstroInstance:
         if db.astrocfg['zodiactype'] == 'sidereal':
             td['bottomLeft1']=_("Sidereal")
             td['bottomLeft2']=siderealmode_chartview[db.astrocfg['siderealmode']]
+        elif db.astrocfg['zodiactype'] == 'draconic':
+            td['bottomLeft1']=_("Draconic")
+            td['bottomLeft2'] = '%s: %s' % (_("Mean Node"), self.dec2deg(getattr(self, 'mean_node_longitude', 0.0)))
         else:
             td['bottomLeft1']=_("Tropical")
             td['bottomLeft2'] = '%s: %s (%s) %s (%s)' % (_("Lunar Phase"),self.lunar_phase['sun_phase'],_("Sun"),self.lunar_phase['moon_phase'],_("Moon"))
@@ -8058,9 +8062,10 @@ class mainWindow:
         table.attach(data['zodiactype'], 0, 1, 10, 11, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
         chartview={
                 "tropical":_("Tropical"),
-                "sidereal":_("Sidereal")
-                }       
-        self.zodiactype_list=["tropical","sidereal"]
+                "sidereal":_("Sidereal"),
+                "draconic":_("Draconic")
+                }
+        self.zodiactype_list=["tropical","sidereal","draconic"]
         active=0
         for n in range(len(self.zodiactype_list)):
             data['zodiactype'].append_text(chartview[self.zodiactype_list[n]])
