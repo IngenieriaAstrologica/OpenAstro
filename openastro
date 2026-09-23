@@ -3646,7 +3646,16 @@ class openAstroInstance:
                         #check if we want to display this aspect    
                         if  ( float(self.aspects[z]['degree']) - orb_before ) <= diff <= ( float(self.aspects[z]['degree']) + 1.0 ):
                             if self.aspects[z]['visible'] == 1:
-                                out = out + self.drawAspect( r , ar , self.planets_degree_ut[i] , self.t_planets_degree_ut[x] , self.colors["aspect_%s" %(self.aspects[z]['degree'])] )     
+                                #the line must land on the same point `diff`
+                                #was measured from: `start` (the natal
+                                #target -- true position, antiscion or
+                                #contra-antiscion), not always the true
+                                #natal degree. Using the true degree
+                                #unconditionally here drew antiscion/
+                                #contra-antiscion aspect lines that did not
+                                #geometrically match the angle that
+                                #qualified them as an aspect.
+                                out = out + self.drawAspect( r , ar , start , self.t_planets_degree_ut[x] , self.colors["aspect_%s" %(self.aspects[z]['degree'])] )
                             #aspect grid dictionary
                             if self.aspects[z]['visible_grid'] == 1:
                                 self.atgrid.append({})
