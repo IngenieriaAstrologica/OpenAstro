@@ -2,6 +2,35 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Fix: transit-to-antiscia aspect lines drawn to the wrong point — 2026-09-23
+
+### Bug
+`makeAspectsTransit()` measured the aspect angle (`diff`) from the natal
+*target* — the true natal degree, or its antiscion/contra-antiscion
+reflection when the Transit Chart's Target selector (added in the
+transits-to-antiscia feature above) is set to Antiscia/Contra-antiscia —
+but then unconditionally passed `self.planets_degree_ut[i]` (always the
+true natal degree) to `drawAspect()`. For `target=antiscion` or
+`contraantiscion` the drawn line therefore did not geometrically match the
+angle that had qualified it as an aspect: with the fixture chart and
+Target=Antiscia, one flagged aspect had `diff=0.197°` (a near-exact
+conjunction between a transiting planet and a natal antiscion point) while
+the line actually drawn — true natal degree to transiting planet — was
+101.5° apart, nowhere near a conjunction.
+
+Found during a live-GTK visual review of the recently merged features.
+
+### Fix
+`drawAspect()` now receives `start` — the same natal-target longitude
+`diff` was measured from — instead of always `self.planets_degree_ut[i]`.
+
+### Verification
+8/8 sampled `atgrid` rows mismatched the drawn line's implied angle before
+the fix; 0/18 after. `bash tests/run.sh`: 29/29 stages pass.
+
+### Files changed
+- `openastro` — `makeAspectsTransit()`, one line
+
 ## Feature: transits to antiscia — 2026-09-22
 
 ### Change
