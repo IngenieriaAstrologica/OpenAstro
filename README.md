@@ -12,10 +12,6 @@
 
 > Palabras clave / Keywords: astrología profesional, professional astrology, carta natal, natal chart, revolución solar, solar return, revolución lunar, lunar return, progresiones secundarias, secondary progressions, sinastría, synastry, direcciones primarias, primary directions, dodecatemorias, antiscios, estrellas fijas, fixed stars, tránsitos, transits, Swiss Ephemeris, software astrología libre, free astrology software, OpenAstro, GTK.
 
-<script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"OpenAstro","applicationCategory":"UtilitiesApplication","applicationSubCategory":"Astrology Software","operatingSystem":["Linux","Windows (WSL)"],"softwareVersion":"1.1.57","inLanguage":["es","en"],"license":"https://www.gnu.org/licenses/gpl-3.0.html","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"downloadUrl":"https://github.com/IngenieriaAstrologica/OpenAstro","description":"Programa libre de astrología profesional con carta natal, revoluciones, progresiones, sinastría, direcciones primarias y efemérides suizas. Free professional astrology software with natal charts, returns, progressions, synastry, primary directions and Swiss Ephemeris."}
-</script>
-
 ## Descarga / Download
 
 ```bash
