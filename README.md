@@ -1,6 +1,33 @@
-# 🌌 OpenAstro — Edición Python 3
+# OpenAstro — Software libre de astrología profesional (Python 3 + GTK 3) | Free Professional Astrology Software
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](COPYING)
+[![Python 3](https://img.shields.io/badge/Python-3.9%2B-green.svg)](https://www.python.org/)
+[![GTK 3](https://img.shields.io/badge/GUI-GTK%203-orange.svg)](https://www.gtk.org/)
 
 > Software de astrología de código abierto, actualizado y corregido para el ecosistema moderno de Python 3 (GTK 3). Fork de **OpenAstro.org 1.1.57** de Pelle van der Scheer.
+
+**OpenAstro** es un programa libre de **astrología profesional**: cartas natales, **revoluciones solares y lunares**, **progresiones secundarias**, **sinastría**, **direcciones primarias topocéntricas** (Polich-Page), **dodecatemorias**, **antiscios**, **estrellas fijas** y **tránsitos** en doble rueda, con **efemérides suizas** (pyswisseph) y atlas offline de ~150.000 ciudades.
+
+**OpenAstro** is a free **professional astrology** program: natal charts, **solar and lunar returns**, **secondary progressions**, **synastry**, **topocentric primary directions** (Polich-Page), **dodecatemoria**, **antiscia**, **fixed stars** and **transits** in bi-wheel charts, with **Swiss Ephemeris** (pyswisseph) and an offline atlas of ~150,000 cities.
+
+> Palabras clave / Keywords: astrología profesional, professional astrology, carta natal, natal chart, revolución solar, solar return, revolución lunar, lunar return, progresiones secundarias, secondary progressions, sinastría, synastry, direcciones primarias, primary directions, dodecatemorias, antiscios, estrellas fijas, fixed stars, tránsitos, transits, Swiss Ephemeris, software astrología libre, free astrology software, OpenAstro, GTK.
+
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"OpenAstro","applicationCategory":"UtilitiesApplication","applicationSubCategory":"Astrology Software","operatingSystem":["Linux","Windows (WSL)"],"softwareVersion":"1.1.57","inLanguage":["es","en"],"license":"https://www.gnu.org/licenses/gpl-3.0.html","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"downloadUrl":"https://github.com/IngenieriaAstrologica/OpenAstro","description":"Programa libre de astrología profesional con carta natal, revoluciones, progresiones, sinastría, direcciones primarias y efemérides suizas. Free professional astrology software with natal charts, returns, progressions, synastry, primary directions and Swiss Ephemeris."}
+</script>
+
+## Descarga / Download
+
+```bash
+git clone https://github.com/IngenieriaAstrologica/OpenAstro
+cd OpenAstro
+sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-rsvg-2.0
+pip install -r requirements.txt
+python3 openastro
+```
+
+- [Código fuente / Source code](https://github.com/IngenieriaAstrologica/OpenAstro) · [Versiones / Releases](https://github.com/IngenieriaAstrologica/OpenAstro/releases).
+- **Windows:** mediante WSL con Ubuntu + WSLg (doble clic en `OpenAstro.bat`).
 
 ![OpenAstro](icons/openastro.svg)
 
@@ -90,11 +117,33 @@ Respecto a OpenAstro.org 1.1.57, todo detallado en **[CHANGELOG.md](CHANGELOG.md
 ### Compatibilidad
 - Puesta al día para **Python 3** y **GTK 3**, con zonas horarias por `zoneinfo` (sin `pytz`) y lanzador para Windows vía WSL.
 
+## 🔗 Enlaces / Links
+
+- [OpenAstro.org](http://www.openastro.org) — programa original de Pelle van der Scheer del que parte este fork.
+- [carta-natal.es](https://carta-natal.es/) — referencia para el cálculo de direcciones primarias (carta eclíptica, ascensional o mixta).
+- [Swiss Ephemeris (AstroDienst)](https://www.astro.com/swisseph/) — efemérides de alta precisión ([pyswisseph](https://pypi.org/project/pyswisseph/) en Python).
+- [GeoNames](https://www.geonames.org/) — atlas de ciudades online.
+- [GTK](https://www.gtk.org/) — interfaz gráfica del programa.
+
 ## 🙏 Créditos
 - Software original **OpenAstro.org** por **Pelle van der Scheer** — <http://www.openastro.org>
 - Cambios del fork (Lotes de Fortuna, Espíritu e Infortunio, entre otros): **jipejavier@gmail.com**
 - Símbolo del Lot of Infortune: cruz potenzada de Wikimedia Commons (dominio público).
 - Símbolo del Lot of Spirit (ɸ): glifo de Noto Sans (SIL Open Font License 1.1).
+
+## ❓ Preguntas frecuentes / FAQ
+
+**¿OpenAstro es gratis? / Is OpenAstro free?**
+Sí, es software libre bajo licencia GPLv3. Yes, it is free software under the GPLv3 license.
+
+**¿Qué programa calcula direcciones primarias topocéntricas gratis? / Which free program calculates topocentric primary directions?**
+OpenAstro calcula direcciones primarias topocéntricas (Polich-Page) en doble rueda, con claves de Naibod, Ptolomeo o arco solar.
+
+**¿Funciona en Windows? / Does it work on Windows?**
+Sí mediante WSL con Ubuntu + WSLg (`OpenAstro.bat`). Yes, via WSL with Ubuntu + WSLg.
+
+**¿En qué idiomas está disponible? / Which languages are available?**
+Multilingüe con numerosos idiomas en `locale/`. Multilingual, with many languages included in `locale/`.
 
 ## 📄 Licencia
 Distribuido bajo la **GNU General Public License v3** (ver [COPYING](COPYING)).

@@ -1,0 +1,8 @@
+lang: es
+title: "OpenAstro — Software libre de astrología profesional (Python 3 + GTK 3) | Free Professional Astrology Software"
+description: "OpenAstro: programa libre de astrología profesional con carta natal, revoluciones, progresiones, sinastría, direcciones primarias y efemérides suizas. Descarga gratis para Linux y Windows (WSL)."
+url: "https://ingenieriaastrologica.github.io"
+baseurl: "/OpenAstro"
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
