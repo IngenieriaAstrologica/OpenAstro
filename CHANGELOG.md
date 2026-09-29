@@ -2,6 +2,218 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Spanish default language, dialog and warning cleanup — 2026-09-29
+
+### Change
+- The UI language now defaults to **Spanish** (`es`): fresh databases
+  store `language=es`, the gettext fallback for systems without a
+  matching translation (e.g. `LANG=C.UTF-8`) is Spanish instead of
+  English, and the legacy `"default"` value is migrated to `"es"` on
+  startup (`setLanguage("default")` installs the Spanish catalog, so the
+  "Default" entry in Settings → Configuration also means Spanish). The
+  previous `OpenAstro.org has not yet been translated in your
+  language!...` notice on every start is gone; the fallback is silent.
+- `launch.sh` exports `LANG=es_ES.UTF-8` / `LANGUAGE=es_ES:es` so the
+  system-level lookup also resolves to Spanish (needs the locale
+  generated: `sudo locale-gen es_ES.UTF-8`).
+
+### Fix
+- 10 `Gtk.Dialog(...)` calls passed the buttons tuple positionally,
+  raising `PyGTKDeprecationWarning` on every such dialog (Harmogram,
+  Cyclic Index, Ingresses/Lunations/Eclipses, Select Month, Info,
+  Question, Duplicate). They now use keyword arguments
+  (`title`/`transient_for`/`flags`) plus `add_buttons()`, which also
+  silences the positional-GObject-constructor warning.
+- `Gtk.Table.set_col/row_spacing(s)` deprecation noise is filtered with
+  a narrow `warnings.filterwarnings` (message `Gtk\.Table\.set_.*`
+  only): the whole `Gtk.Table` API is deprecated with no per-call
+  replacement, and the `Gtk.Grid` rewrite stays deferred as too risky —
+  so other `DeprecationWarning`s keep surfacing.
+- `tests/e2e/import_kepler.py` failed with `AttributeError: module
+  'importlib' has no attribute 'machinery'` (used without importing
+  it); the import was added.
+
+### Verification
+- `bash tests/run.sh`: 29/29 pass (was 28/29 before the e2e fix).
+- Headless start (`xvfb-run`, `LANG=C.UTF-8` and `LANG=es_ES.UTF-8`):
+  `installing language (es)`, no warnings, chart SVG builds.
+- A probe constructing the new dialog pattern plus the table calls
+  under `warnings.simplefilter('error')` passes, and unrelated
+  `DeprecationWarning`s still raise.
+
+### Files changed
+- `openastro` — `DEFAULT_LANGUAGE`, gettext fallback, fresh-DB default,
+  `"default"` → `"es"` migration, `setLanguage()`, 10 dialogs,
+  `warnings` filter
+- `launch.sh` — `LANG`/`LANGUAGE` exports
+- `tests/e2e/import_kepler.py` — missing import
+
+## Fix: transit-to-antiscia aspect lines drawn to the wrong point — 2026-09-23
+
+### Bug
+`makeAspectsTransit()` measured the aspect angle (`diff`) from the natal
+*target* — the true natal degree, or its antiscion/contra-antiscion
+reflection when the Transit Chart's Target selector (added in the
+transits-to-antiscia feature above) is set to Antiscia/Contra-antiscia —
+but then unconditionally passed `self.planets_degree_ut[i]` (always the
+true natal degree) to `drawAspect()`. For `target=antiscion` or
+`contraantiscion` the drawn line therefore did not geometrically match the
+angle that had qualified it as an aspect: with the fixture chart and
+Target=Antiscia, one flagged aspect had `diff=0.197°` (a near-exact
+conjunction between a transiting planet and a natal antiscion point) while
+the line actually drawn — true natal degree to transiting planet — was
+101.5° apart, nowhere near a conjunction.
+
+Found during a live-GTK visual review of the recently merged features.
+
+### Fix
+`drawAspect()` now receives `start` — the same natal-target longitude
+`diff` was measured from — instead of always `self.planets_degree_ut[i]`.
+
+### Verification
+8/8 sampled `atgrid` rows mismatched the drawn line's implied angle before
+the fix; 0/18 after. `bash tests/run.sh`: 29/29 stages pass.
+
+### Files changed
+- `openastro` — `makeAspectsTransit()`, one line
+
+## Feature: transits to antiscia — 2026-09-22
+
+### Change
+- New **Target** selector in the **Transit Chart** dialog, alongside the
+  existing Measure one: **Natal positions** (default, the current
+  behaviour), **Antiscia** or **Contra-antiscia**.
+- In antiscion/contra-antiscion mode, aspects are measured between the
+  transiting planet's TRUE longitude and the natal planet's antiscion (or
+  contra-antiscion) point instead of its true position -- following
+  Morinus `transits.py` (`Transit.ANTISCION` / `.CONTRAANTISCION`), which
+  always compares the transiting body's own true position against the
+  natal point, never the transiting body's own antiscion. Unlike Morinus'
+  automatic day/month scan (which hardcodes the conjunction only, since it
+  is just hunting for exact crossings), here the target gets the full
+  aspect set and orbs, matching how this engine already treats
+  `TRANSIT_MEASURE_KEYS`.
+- Since an antiscion point has no defined ecliptic latitude, the
+  ascensional (mundo) measure only combines with the natal target; a
+  non-natal target is always measured on ecliptic longitude, same as
+  Morinus never pairs mundo contacts with antiscia either. The bi-wheel
+  itself is untouched: the aspect *line* still draws from the planet's
+  true position (as the ascensional measure already does), only the
+  *orb calculation* moves to the antiscion/contra-antiscion point --
+  a table/aspect-list feature on the existing transit bi-wheel, no SVG
+  changes needed.
+- The last used target is remembered in `astrocfg` (`transit_target`),
+  like the measure. Synastry (which reuses the transit bi-wheel) follows
+  the saved target too, same as it already follows the saved measure.
+
+### How it works
+- `openastromod/primary.py` -- new `TRANSIT_TARGET_KEYS`/`TAGS` plus
+  `transit_target_longitude(natal_lon, ayan, target)`, which reuses
+  `swiss.calc_antiscion()` rather than a second antiscion formula.
+- `openastro` -- `localToTransit()` takes a `target` argument (default
+  `"natal"`, so every existing caller is unaffected) and adds it to the
+  chart title; `makeAspectsTransit()` picks `self.planets_antiscia_ut` /
+  `self.planets_contra_ut` (already computed every redraw for the Antiscia
+  chart) as the natal side of the diff instead of `self.planets_degree_ut`,
+  and restricts the ascensional branch to `target == "natal"`;
+  `specialTransit()`/`specialTransitSubmit()` add the Target combo,
+  validate it and persist it; Synastry's `openDatabaseSelectReturn()`
+  applies the saved target like it already does the saved measure.
+
+### Verification
+- `tests/engine/transit_target.py` (24 checks, real Swiss Ephemeris, same
+  natal chart as the lunar-return test: 1987-04-09 12:00:30 UT, lon
+  2.0367, lat 41.3436 -- natal Sun 19.109463, Moon 144.120167):
+  `transit_target_longitude()` matches `swiss.calc_antiscion()` bit for
+  bit for both bodies and both directions; matches a hand reflection
+  formula (`ant = (180 - lon) mod 360`) to better than 1e-9 degrees at
+  the natal longitudes plus the four axis/boundary points (0/90/180/270)
+  and a near-360 edge case; `ant(ant(Sun)) == Sun` to 0.0 exactly
+  (involution); a nonzero ayanamsa reaches `calc_antiscion()` unchanged
+  (sidereal Sun antiscion 111.490537 vs tropical 160.890537).
+- Exact-contact check, by construction (same style as the ascensional
+  transits feature): natal Sun antiscion = 160.890537 deg; a transiting
+  planet placed exactly there registers **orb 0.000000000000 deg
+  (0.000000 arcsec)** -- an exact conjunction -- while one placed 5 deg
+  off measures exactly 5.000000 deg, and antiscion/contra-antiscion are
+  exactly 180 deg apart.
+- `tests/dialog/transit_dialog.py` extended: the Target combo defaults to
+  Natal positions on first use, a submitted Ascensional+Antiscia request
+  reaches `localToTransit(dt, converse, 'ascensional', 'antiscion')`
+  exactly, `transit_target` persists in `astrocfg` alongside direction and
+  measure (date still deliberately not remembered), and the dialog reopens
+  with the antiscion target selected.
+- `bash tests/run.sh`: 24/24 stages pass (was 23; `transit_target.py` is
+  new), including both lint checks (no `self.method()` call to an
+  `openAstroInstance` method).
+
+### Files changed
+- `openastromod/primary.py` -- `TRANSIT_TARGET_KEYS`/`TAGS`,
+  `transit_target_longitude()`
+- `openastro` -- `transit_target` default, `localToTransit()`,
+  `makeAspectsTransit()`, `specialTransit()`/`specialTransitSubmit()`,
+  Synastry's saved-target follow in `openDatabaseSelectReturn()`
+- `tests/engine/transit_target.py` -- new
+- `tests/dialog/transit_dialog.py` -- Target combo coverage
+
+---
+
+## Feature: Ingresses, Lunations, Eclipses — 2026-09-22
+
+### Change
+One new Tables entry, `Tables -> Ingresses, Lunations, Eclipses`, covering
+the three mundane-astrology calendar techniques carta-natal.es keeps as
+separate pages (`estaciones.php`, `lunaciones.php`, `eclipses.php`). They
+share one question -- "what happens, and exactly when, over a date range" --
+so they share one search module (`openastromod/mundane.py`) and one dated
+table, styled like the Fixed Stars table and the Cyclic Index turning-point
+list. The dialog asks a From/To span (defaulting to the current calendar
+year) and four category checkboxes -- solar ingresses, lunar ingresses,
+lunations, eclipses -- with solar ingresses, lunations and eclipses on by
+default and lunar ingresses opt-in, since Moon ingresses alone run to about
+150 rows a year. A 40-year span cap guards the dialog against a fat-fingered
+range; the categories persist to `astrocfg` and the dates deliberately do
+not, matching every other technique dialog in the project.
+
+### Every date is a solver, not a scan
+* **Ingresses** walk the twelve 30-degree cusps forward with
+  `swe.solcross_ut()` / `swe.mooncross_ut()`, one exact solver call per
+  event.
+* **Lunations** have no `syzygy_ut` in the installed pyswisseph build (the
+  `cross` family only targets one body against a *fixed* longitude, and the
+  Sun-Moon angle moves), so this is the one place the module root-finds by
+  hand: Newton's method on the Sun-Moon phase angle, using the relative
+  speed Swiss Ephemeris already returns via `FLG_SPEED`. The phase is
+  monotonic -- the Moon's slowest apparent speed is always faster than the
+  Sun's fastest -- so the root exists and Newton converges in a handful of
+  steps.
+* **Eclipses** call Swiss Ephemeris' own forward search,
+  `swe.sol_eclipse_when_glob()` and `swe.lun_eclipse_when()`, global rather
+  than location-bound.
+
+### Verified two ways, per technique
+Each search gets one cross-check against a published value it could not
+have been fitted to, and one structural invariant a broken search could not
+satisfy by accident (`tests/engine/mundane.py`):
+
+| technique | published cross-check | structural check |
+|---|---|---|
+| solar ingresses | 2024 March equinox within 24.2 s of NASA/USNO's 03:06 UTC | 2024 holds exactly the twelve signs, each once, in zodiac order, 27-32 days apart |
+| lunations | 2024-04-08 new moon within 8.3 s of NASA's 18:21 UTC | 2022-2027: 62 new and 62 full moons, every new-to-new and full-to-full gap 29.282-29.806 days (true synodic month is 29.27-29.83), new/full alternating strictly, and the Sun-Moon angle at the found instant within 3.3e-9 deg of exactly 0 or 180 |
+| solar eclipses | the 2024-04-08 "Great American Eclipse" within 0.6 s of NASA's 18:17:21 UTC | 2022-2027's 10 solar eclipses all fall within 0.01 days of a new moon, kinds all recognised |
+| lunar eclipses | the 2025-09-07 total lunar eclipse within 50.3 s of the published 18:11 UTC | 2022-2027's 10 lunar eclipses all fall within 0.01 days of a full moon, kinds all recognised |
+
+The dialog itself is driven headless the same way as the other technique
+prompts (`tests/dialog/mundane_dialog.py`, 17 checks): the default span and
+categories, cancel drawing and persisting nothing, every validation guard
+(To before/equal to From, a span over 40 years, an invalid calendar date,
+non-numeric input, no category selected), and that a custom category
+selection round-trips through `astrocfg` into the next dialog's defaults.
+
+`bash tests/run.sh`: 25 passed, 0 failed.
+
+---
+
 ## Change: the harmogram's twelve curves, made legible — 2026-09-21
 
 ### Change

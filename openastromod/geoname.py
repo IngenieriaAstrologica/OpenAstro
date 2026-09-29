@@ -57,12 +57,14 @@ def search(name='',country=''):
 		
 	#open connection and read xml
 	params = urlencode({'q': name,'country':country,'maxRows':1,'featureClass':'P','username': 'openastro.org'})
+	url = "http://api.geonames.org/search?%s" % params
 
 	try:
-		f = urlopen("http://api.geonames.org/search?%s" % params, timeout=20)
+		f = urlopen(url, timeout=20)
 
 	except (HTTPError, URLError) as error:
-		print('Errir: not retrieved because %s\nURL: %s', error, url)
+		print('Error: not retrieved because %s\nURL: %s' % (error, url))
+		return None
 
 	except timeout:
 		print('Timeout on search!')
@@ -87,11 +89,13 @@ def search(name='',country=''):
 		geoname[-1]['fcl']=_getText(i.getElementsByTagName("fcl")[0].childNodes)
 		geoname[-1]['fcode']=_getText(i.getElementsByTagName("fcode")[0].childNodes)
 		#get timezone
-		tparams = urlencode({'lat':geoname[-1]['lat'],'lng':geoname[-1]['lng'],'username':'openastro.org'})		
+		tparams = urlencode({'lat':geoname[-1]['lat'],'lng':geoname[-1]['lng'],'username':'openastro.org'})
+		turl = "http://api.geonames.org/timezone?%s" % tparams
 		try:
-			f = urlopen("http://api.geonames.org/timezone?%s" % tparams, timeout=20)
+			f = urlopen(turl, timeout=20)
 		except (HTTPError, URLError) as error:
-			print('Errir: not retrieved because %s\nURL: %s', error, url)
+			print('Error: not retrieved because %s\nURL: %s' % (error, turl))
+			return None
 		except timeout:
 			print('Timeout on search!')
 			return None
@@ -109,5 +113,4 @@ def search(name='',country=''):
 		print("No results!")
 		return None
 	else:
-		print(geoname)
 		return geoname

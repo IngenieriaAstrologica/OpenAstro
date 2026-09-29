@@ -26,9 +26,16 @@
 """
 
 #basics
-import math, sys, os.path, datetime, socket, gettext, codecs, webbrowser, csv, calendar
+import math, sys, os.path, datetime, socket, gettext, codecs, webbrowser, csv, calendar, warnings
 from zoneinfo import ZoneInfo  # stdlib time zones (Python 3.9+)
 #import geonames  # unused module import
+
+#Gtk.Table (including its set_col/row_spacing(s) helpers) is deprecated
+#wholesale in GTK 3 with no per-call replacement: silencing it takes a
+#Gtk.Grid rewrite of 127 .attach() calls, deferred as too risky (see
+#CHANGELOG). Filter that known noise so genuine warnings stay visible.
+warnings.filterwarnings("ignore", message=r"Gtk\.Table\.set_.*",
+                        category=DeprecationWarning)
 
 #copyfile
 from shutil import copyfile
@@ -53,7 +60,7 @@ from gi.repository import Gtk, Gdk, GLib, GObject, Rsvg, cairo
 #internal openastro modules
 sys.path.append("/usr/lib/python3.5/dist-packages") #trying to 'fix' some problems importing openastromod on some distros
 sys.path.append("/usr/lib/python3.5/site-packages") #trying to 'fix' some problems importing openastromod on some distros
-from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine, transit as transit_engine, cyclic as cyclic_engine, harmogram as harmogram_engine, harmonicvector as harmonicvector_engine
+from openastromod import zonetab, geoname, importfile, dignities, swiss as ephemeris, primary as primary_engine, atacir as atacir_engine, munprofection as munprofection_engine, firdaria as firdaria_engine, midpoints as midpoints_engine, arabicparts as arabicparts_engine, profections as profections_engine, transit as transit_engine, cyclic as cyclic_engine, harmogram as harmogram_engine, harmonicvector as harmonicvector_engine, harmonics as harmonics_engine, mundane as mundane_engine
 
 def _rsvg_render(handle, cr):
     """Render a whole SVG handle at its natural size onto a Cairo context,
@@ -68,8 +75,14 @@ def _rsvg_render(handle, cr):
 #debug
 #LOCAL=False
 LOCAL=True
-#DEBUG=False
-DEBUG=True
+#Off by default. dprint() also turns on with --debug on the command line, so
+#nothing is lost by this -- but left on, the ~86 dprint() calls write to
+#stdout on every ordinary run, and several of them carry chart data: the
+#birth latitude and longitude and location (drawChart), the UTC-to-local
+#conversion (utcToLocal) and the user's own home location (setHomeLocation).
+#This repository takes care to keep that data out of git; printing it to the
+#console on every run gave it back.
+DEBUG=False
 VERSION='1.1.59'
 
 #Wheel drawing: zodiac sign glyph scale and the alpha of each painted layer.
@@ -241,19 +254,24 @@ LANGUAGES_LABEL={
 
 TDomain = os.path.join(DATADIR,'locale')
 LANGUAGES=list(LANGUAGES_LABEL.keys())
+#Default UI language: Spanish. Used when the system locale provides no
+#translation (e.g. LANG=C.UTF-8), when the user never chose a language,
+#and for fresh databases. (dprint is defined at the end of this file, so
+#the fallback below still uses print.)
+DEFAULT_LANGUAGE = "es"
 TRANSLATION={}
 for i in range(len(LANGUAGES)):
     try:
         TRANSLATION[LANGUAGES[i]] = gettext.translation("openastro",TDomain,languages=[LANGUAGES[i]])
     except IOError as err:
         print("IOError! Invalid languages specified (%s) in %s" %(LANGUAGES[i],TDomain))
-        TRANSLATION[LANGUAGES[i]] = gettext.translation("openastro",TDomain,languages=['en'])
+        TRANSLATION[LANGUAGES[i]] = gettext.translation("openastro",TDomain,languages=[DEFAULT_LANGUAGE])
         
 try:
     TRANSLATION["default"] = gettext.translation("openastro",TDomain)
 except IOError as err:
-    print("OpenAstro.org has not yet been translated in your language! Could not load translation...")
-    TRANSLATION["default"] = gettext.translation("openastro",TDomain,languages=['en'])
+    #silent fallback: Spanish is the default language (e.g. LANG=C.UTF-8)
+    TRANSLATION["default"] = gettext.translation("openastro",TDomain,languages=[DEFAULT_LANGUAGE])
 
 
 #config class
@@ -423,7 +441,7 @@ class openAstroSqlite:
                             "version":str(cfg.version),
                             "use_geonames.org":"0",
                             "houses_system":"P",
-                            "language":"default",
+                            "language":"es",
                             "postype":"geo",
                             "chartview":"traditional",
                             "zodiactype":"tropical",
@@ -440,7 +458,13 @@ class openAstroSqlite:
         for row in self.cursor:
             self.astrocfg[row['name']]=row['value'] 
 
-        #install language
+        #install language ("default" is kept as an alias of Spanish: it
+        #meant system-or-English in older versions and now resolves to
+        #DEFAULT_LANGUAGE so the UI never silently falls back to English)
+        if self.astrocfg.get('language') == "default":
+            sql='INSERT OR REPLACE INTO astrocfg (name,value) VALUES("language","es")'
+            self.cursor.execute(sql)
+            self.astrocfg['language'] = "es"
         self.setLanguage(self.astrocfg['language'])
         self.lang_label=LANGUAGES_LABEL
 
@@ -895,9 +919,9 @@ class openAstroSqlite:
         self.close()
 
     def setLanguage(self, lang=None):
-        if lang==None or lang=="default":           
-            TRANSLATION["default"].install()
-            dprint("installing default language")
+        if lang==None or lang=="default":
+            TRANSLATION[DEFAULT_LANGUAGE].install()
+            dprint("installing default language (%s)" % (DEFAULT_LANGUAGE,))
         else:
             TRANSLATION[lang].install()
             dprint("installing language (%s)"%(lang))
@@ -1439,13 +1463,26 @@ class openAstroInstance:
         #or "TransitOuter")
         self.solar_active=False
         self.biwheel_single="Solar"
+        #harmonic chart order N (openastromod.harmonics): a pure single
+        #wheel, no bi-wheel state needed -- see localToHarmonic below
+        self.harmonic_n=harmonics_engine.DEFAULT_HARMONIC
         #transit measure: ecliptic longitudes (default) or ascensional
         #(mundo contacts by OA equality under the transit pole); the
         #dialog remembers the last choice in astrocfg like the directions one
         self.transit_measure="ecliptic"
+        #transit target: which natal reference point the transiting planets
+        #are compared against -- true natal position (default), antiscion or
+        #contra-antiscion (Morinus transits.py Transit.ANTISCION /
+        #.CONTRAANTISCION); also remembered in astrocfg
+        self.transit_target="natal"
         #transit direction: direct (the sky of the requested moment) or
         #converse (that moment mirrored about the birth instant)
         self.transit_converse=False
+        #Aries Rising chart view: purely presentational -- when True the
+        #wheel is rotated so 0 Aries sits at the horizon instead of the
+        #true Ascendant (see wheelPivot()). No coordinate is recomputed,
+        #only the drawing rotation changes.
+        self.aries_rising=False
 
         #Default dpi for svg is set per-handle when the file is loaded (setSVG)
 
@@ -1739,6 +1776,103 @@ class openAstroInstance:
         openAstro.transit=True
         return
 
+    def localToMunProfection(self, dt, converse=False):
+        #Placidian mapping of the Atacir dialog (the Zodiacal mapping above
+        #is Demetrio Santos' "atacir"; this one is what Morinus calls a
+        #"mundane profection"). Unlike the rigid Zodiacal rotation, this
+        #relocates the WHOLE natal chart to a fictitious geographical
+        #longitude computed from the Ascendant's diurnal/nocturnal semi-arc,
+        #split at the 6-year mark of a 12-year cycle
+        #(openastromod.munprofection.relocated_longitude, port of Morinus
+        #munprofections.MunProfections), recasts Placidus cusps at that
+        #longitude for the SAME UT instant as the radix, and repositions
+        #each body individually against its own natal Placidus speculum and
+        #the new RAMC (munprofection.reposition_frame, port of
+        #planets.Planet.calcMundaneProfPos). converse=True runs it into the
+        #past (negative elapsed years).
+        dt_utc = dt - datetime.timedelta(seconds=float(self.timezone)*float(3600))
+
+        if getattr(self, 'planets', None) is None:
+            self.planets = db.getSettingsPlanet()
+        natal = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+
+        target_jd = primary_engine.julday(dt_utc.year,dt_utc.month,dt_utc.day,self.decHourJoin(dt_utc.hour,dt_utc.minute,dt_utc.second))
+        diff_years = (target_jd - natal.jd_ut) / munprofection_engine.TROPICAL_YEAR
+        if converse:
+            diff_years = -diff_years
+
+        #natal Ascendant declination: Morinus' ascmc2[ASC][DECL] -- the
+        #natal Ascendant's own ecliptic point (latitude 0) taken to the equator
+        natal_asc_decl = primary_engine.ecliptic_to_equatorial(natal.houses_degree_ut[0], 0.0, natal.jd_ut)[1]
+
+        lon_z, diff_lon, cyc_in_years = munprofection_engine.relocated_longitude(
+            natal.ramc, natal_asc_decl, self.geolat, self.geolon, diff_years)
+
+        self.munprof_diff_years = diff_years
+        self.munprof_diff_lon = diff_lon
+        self.munprof_cyc_in_years = cyc_in_years
+        self.munprof_lon = lon_z
+        self.munprof_converse = converse
+
+        if diff_lon == 0.0:
+            #Same bypass Morinus' own stepper dialog uses at an exact
+            #multiple of 12 years (profectionstepperdlg.show: literally
+            #`pchart = self.chart`): the relocated longitude coincides with
+            #the radix, but the per-body mundane solve is a single trig
+            #approximation, not an exact inverse of the natal speculum (see
+            #openastromod.munprofection and tests/engine/munprofection.py
+            #for the up-to-a-degree drift this sidesteps) -- so at zero
+            #relocation the radix is shown unchanged rather than
+            #round-tripped through that approximation.
+            mp = list(natal.planets_degree_ut)
+            mh = list(natal.houses_degree_ut)
+        else:
+            #recast Placidus cusps at the fictitious longitude, same UT
+            #instant (only the longitude moves; date, hour and latitude
+            #stay the radix's)
+            reloc = ephemeris.ephData(self.year,self.month,self.day,self.hour,lon_z,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+            mp = munprofection_engine.reposition_frame(natal.planets_degree_ut, natal.planets_latitude, natal.ramc, reloc.ramc, self.geolat, natal.jd_ut)
+            mh = list(reloc.houses_degree_ut)
+            #the relocated houses define the angles directly -- the
+            #per-body mundane solve is degenerate exactly at the
+            #horizon/meridian it defines, so indices 23-26 (Asc/MC/Dsc/IC)
+            #are not run through it
+            if len(mp) > 26:
+                mp[23], mp[24], mp[25], mp[26] = mh[0], mh[9], mh[6], mh[3]
+            #South Node mirrors the (already relocated) North Node, exactly
+            #as ephemeris.ephData derives it natally -- it has no speculum
+            #of its own in Morinus either
+            if len(mp) > 29 and len(mp) > 10:
+                mp[29] = munprofection_engine.normalize(mp[10] - 180.0)
+
+        self.t_planets_degree_ut = mp
+        self.t_planets_sign, self.t_planets_degree = self.split_sign_degree(mp)
+        self.t_planets_retrograde = list(natal.planets_retrograde)
+        self.t_houses_degree_ut = mh
+        self.t_houses_sign, self.t_houses_degree = self.split_sign_degree(mh)
+        #cached for the "Outer only" single-wheel view (makeSVG type
+        #MunProfection): unlike Atacir's stored arc this is not a rigid
+        #rotation, so there is nothing cheap to re-derive from at draw time
+        self.munprof_planets_degree_ut = list(mp)
+        self.munprof_houses_degree_ut = list(mh)
+        #reference date = requested date at the natal place (derived chart)
+        self.t_year = dt_utc.year
+        self.t_month = dt_utc.month
+        self.t_day = dt_utc.day
+        self.t_hour = self.decHourJoin(dt_utc.hour,dt_utc.minute,dt_utc.second)
+        self.t_geolon = self.geolon
+        self.t_geolat = self.geolat
+        self.t_altitude = self.altitude
+        self.solar_active = True
+        self.biwheel_single = "MunProfection"
+        self.type = "Transit"
+        direction = _(", converse") if converse else ""
+        openAstro.charttype="%s (%s-%02d-%02d, %s%s)" % (
+            _("Placidian Profection"), dt.year, dt.month, dt.day,
+            self.dec2deg(munprofection_engine.normalize(diff_lon)), direction)
+        openAstro.transit=True
+        return
+
     def localToAntiscia(self, contra=False):
         #Antiscia (Morinus antiscia.calc) como rueda exterior: el radix se
         #mantiene en self.* (rueda interior) y los antiscios —o los
@@ -1788,6 +1922,27 @@ class openAstroInstance:
         self.type = "Transit"
         openAstro.charttype="%s (%s)" % (_("Contraantiscia") if contra else _("Antiscia"), openAstro.name)
         openAstro.transit=True
+        return
+
+    def localToHarmonic(self, n):
+        #Harmonic chart (openastromod.harmonics): every radix longitude
+        #multiplied by N, folded mod 360. Unlike Dodecatemoria/Antiscia/
+        #Atacir/Directed above, this is not shown as a bi-wheel outer ring
+        #over the radix -- it is a whole chart on its own, so it draws
+        #straight through type "Harmonic" (see makeSVG) instead of the
+        #solar_active/biwheel_single/type="Transit" machinery those reuse.
+        #No new moment either: it derives entirely from the radix, so
+        #there is nothing to remember but N itself.
+        #Houses stay radical -- multiplying cusps by N does not keep them
+        #in ecliptic order, see harmonics.py's module docstring -- so only
+        #self.type changes here; makeSVG overrides the planet longitudes,
+        #never the houses.
+        n = harmonics_engine.valid_harmonic(n)
+        self.harmonic_n = n
+        self.solar_active = False
+        self.type = "Harmonic"
+        openAstro.charttype = "%s %d (%s)" % (_("Harmonic"), n, openAstro.name)
+        openAstro.transit = False
         return
 
     def localToDirected(self, dt, key="naibod", converse=False, measure="ecl_ecl"):
@@ -1854,7 +2009,7 @@ class openAstroInstance:
         openAstro.transit=True
         return
 
-    def localToTransit(self, dt_local=None, converse=False, measure="ecliptic"):
+    def localToTransit(self, dt_local=None, converse=False, measure="ecliptic", target="natal"):
         #Transits as the outer wheel: the radix stays in self.* (inner wheel)
         #and the sky of the requested moment is copied into self.t_* (outer
         #wheel), which is a plain ephemeris reading -- the only question a
@@ -1865,9 +2020,14 @@ class openAstroInstance:
         #openastromod/transit.py (primary directions and atacires negate an
         #arc that is linear in elapsed time, which is the same statement).
         #measure: ecliptic longitudes or ascensional (mundo) contacts.
+        #target: which natal point the transiting planets are compared
+        #against -- true natal position, antiscion or contra-antiscion.
         if measure not in primary_engine.TRANSIT_MEASURE_KEYS:
             measure = "ecliptic"
         self.transit_measure = measure
+        if target not in primary_engine.TRANSIT_TARGET_KEYS:
+            target = "natal"
+        self.transit_target = target
 
         #the transit is read from the home place, as before
         self.t_geolon = float(self.home_geolon)
@@ -1899,15 +2059,16 @@ class openAstroInstance:
         self.biwheel_single = "TransitOuter"
         self.type = "Transit"
         measure_tag = primary_engine.TRANSIT_MEASURE_TAGS[measure]
+        target_tag = primary_engine.TRANSIT_TARGET_TAGS[target]
         if converse:
             #name both moments: the one asked for and the sky actually drawn
             direction = "%s %04d-%02d-%02d %02d:%02d" % (_(", converse, sky at"),
                 sky_local.year,sky_local.month,sky_local.day,sky_local.hour,sky_local.minute)
         else:
             direction = ""
-        self.charttype = "%s (%s-%02d-%02d %02d:%02d%s%s)" % (self.label["transit"],
+        self.charttype = "%s (%s-%02d-%02d %02d:%02d%s%s%s)" % (self.label["transit"],
             dt_local.year,dt_local.month,dt_local.day,dt_local.hour,dt_local.minute,
-            direction,measure_tag)
+            direction,measure_tag,target_tag)
         self.transit = True
         return
 
@@ -1974,6 +2135,19 @@ class openAstroInstance:
             #single-wheel view of the atacir ("Outer only" for the Atacir
             #chart): the whole radix rotated rigidly, cusps included
             #(see override below)
+            module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+
+        elif self.type == "Harmonic":
+            #Nth harmonic chart: a genuine single wheel, not an "Outer
+            #only" view of a bi-wheel -- the radix at the birth moment,
+            #then the planet longitudes are overridden below
+            #(openastromod.harmonics); houses are left as radix
+            module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
+
+        elif self.type == "MunProfection":
+            #single-wheel view of the Placidian mundane profection
+            #("Outer only" for the Atacir chart's Placidian mapping): the
+            #positions cached by localToMunProfection (see override below)
             module_data = ephemeris.ephData(self.year,self.month,self.day,self.hour,self.geolon,self.geolat,self.altitude,self.planets,self.zodiac,db.astrocfg)
 
         elif self.type == "Transit" or self.type == "Composite":
@@ -2083,6 +2257,40 @@ class openAstroInstance:
             self.t_planets_retrograde = list(self.planets_retrograde)
             self.t_houses_degree_ut = ah
             self.t_houses_sign, self.t_houses_degree = self.split_sign_degree(ah)
+
+        if self.type == "Harmonic":
+            #Nth harmonic: every planet longitude * N, folded mod 360
+            #(openastromod.harmonics.chart). Houses are deliberately left
+            #untouched -- radical, not multiplied -- see harmonics.py's
+            #module docstring for why cusps cannot go through this map.
+            n = harmonics_engine.valid_harmonic(getattr(self, 'harmonic_n', harmonics_engine.DEFAULT_HARMONIC))
+            hp = harmonics_engine.chart(self.planets_degree_ut, n)
+            self.planets_degree_ut = hp
+            self.planets_sign, self.planets_degree = self.split_sign_degree(hp)
+
+        if self.type == "MunProfection":
+            #single wheel ("Outer only"): the Placidian mundane profection
+            #is not a rigid rotation, so unlike Atacir there is no cheap
+            #re-derivation from the radix -- localToMunProfection cached the
+            #whole result once, and it is reused here as-is
+            mp = list(getattr(self, 'munprof_planets_degree_ut', self.planets_degree_ut))
+            mh = list(getattr(self, 'munprof_houses_degree_ut', self.houses_degree_ut))
+            self.planets_degree_ut = mp
+            self.planets_sign, self.planets_degree = self.split_sign_degree(mp)
+            self.houses_degree_ut = mh
+            self.houses_sign, self.houses_degree = self.split_sign_degree(mh)
+
+        if self.type == "Transit" and getattr(self, 'solar_active', False) and getattr(self, 'biwheel_single', '') == "MunProfection":
+            #bi-wheel: the Transit branch rewrites t_* from t_year (= natal
+            #date at the natal place), so the outer wheel is re-set here
+            #from the same cached result (inner wheel intact)
+            mp = list(getattr(self, 'munprof_planets_degree_ut', self.planets_degree_ut))
+            mh = list(getattr(self, 'munprof_houses_degree_ut', self.houses_degree_ut))
+            self.t_planets_degree_ut = mp
+            self.t_planets_sign, self.t_planets_degree = self.split_sign_degree(mp)
+            self.t_planets_retrograde = list(self.planets_retrograde)
+            self.t_houses_degree_ut = mh
+            self.t_houses_sign, self.t_houses_degree = self.split_sign_degree(mh)
 
         if self.type == "Directed":
             #rueda simple de direcciones primarias (vista "Outer only").
@@ -2208,6 +2416,7 @@ class openAstroInstance:
         #sobre las longitudes finales para que el modo Composite tambien
         #sea correcto (los antiscios son tropicales por definicion)
         self.ayanamsa = float(getattr(module_data, 'ayanamsa', 0.0))
+        self.mean_node_longitude = float(getattr(module_data, 'mean_node_longitude', 0.0))
         ant = [ephemeris.calc_antiscion(v, self.ayanamsa) for v in self.planets_degree_ut]
         self.planets_antiscia_ut = [a for a, c in ant]
         self.planets_contra_ut = [c for a, c in ant]
@@ -2352,6 +2561,9 @@ class openAstroInstance:
         if db.astrocfg['zodiactype'] == 'sidereal':
             td['bottomLeft1']=_("Sidereal")
             td['bottomLeft2']=siderealmode_chartview[db.astrocfg['siderealmode']]
+        elif db.astrocfg['zodiactype'] == 'draconic':
+            td['bottomLeft1']=_("Draconic")
+            td['bottomLeft2'] = '%s: %s' % (_("Mean Node"), self.dec2deg(getattr(self, 'mean_node_longitude', 0.0)))
         else:
             td['bottomLeft1']=_("Tropical")
             td['bottomLeft2'] = '%s: %s (%s) %s (%s)' % (_("Lunar Phase"),self.lunar_phase['sun_phase'],_("Sun"),self.lunar_phase['moon_phase'],_("Moon"))
@@ -2562,7 +2774,7 @@ class openAstroInstance:
         ink0 = self.colors['paper_0']
         for e, rstar in zip(hits, rlevels):
             ink = colors[e] if e < len(colors) and colors[e] else ink0
-            zeropoint = 360 - self.houses_degree_ut[6]
+            zeropoint = 360 - self.wheelPivot()
             t_offset = zeropoint + lons[e]
             if t_offset > 360:
                 t_offset = t_offset - 360
@@ -2577,7 +2789,7 @@ class openAstroInstance:
     def degreeRing( self , r ):
         out=''
         for i in range(72):
-            offset = float(i*5) - self.houses_degree_ut[6]
+            offset = float(i*5) - self.wheelPivot()
             if offset < 0:
                 offset = offset + 360.0
             elif offset > 360:
@@ -2593,7 +2805,7 @@ class openAstroInstance:
     def degreeTransitRing( self , r ):
         out=''
         for i in range(72):
-            offset = float(i*5) - self.houses_degree_ut[6]
+            offset = float(i*5) - self.wheelPivot()
             if offset < 0:
                 offset = offset + 360.0
             elif offset > 360:
@@ -2692,15 +2904,29 @@ class openAstroInstance:
     
     #draw svg aspects: ring, aspect ring, degreeA degreeB
     def drawAspect( self , r , ar , degA , degB , color):
-            offset = (int(self.houses_degree_ut[6]) / -1) + int(degA)
+            offset = (int(self.wheelPivot()) / -1) + int(degA)
             x1 = self.sliceToX( 0 , ar , offset ) + (r-ar)
             y1 = self.sliceToY( 0 , ar , offset ) + (r-ar)
-            offset = (int(self.houses_degree_ut[6]) / -1) + int(degB)
+            offset = (int(self.wheelPivot()) / -1) + int(degB)
             x2 = self.sliceToX( 0 , ar , offset ) + (r-ar)
             y2 = self.sliceToY( 0 , ar , offset ) + (r-ar)
             out = '         <line x1="'+str(x1)+'" y1="'+str(y1)+'" x2="'+str(x2)+'" y2="'+str(y2)+'" style="stroke: '+color+'; stroke-width: 1; stroke-opacity: .9;"/>\n'
             return out
     
+    #degree that maps to offset=0 in sliceToX/sliceToY, i.e. to the
+    #horizon (9 o'clock) position on the wheel. Normally the chart's true
+    #Descendant, so the true Ascendant degree lands on the horizon.
+    #The "Aries Rising" chart view fixes this at 180 (opposite 0 Aries)
+    #instead, so the zodiac ring, house cusps and planets all rotate as
+    #if the Ascendant sat exactly at 0 Aries -- a pure re-rotation of the
+    #drawing, no ecliptic longitude is recomputed.
+    def wheelPivot( self ):
+        if getattr(self, 'aries_rising', False):
+            return 180.0
+        if db.astrocfg["houses_system"] == "G":
+            return self.houses_degree_ut[18]
+        return self.houses_degree_ut[6]
+
     def sliceToX( self , slice , r, offset):
         plus = (math.pi * offset) / 180
         radial = ((math.pi/6) * slice) + plus
@@ -2713,10 +2939,7 @@ class openAstroInstance:
     
     def zodiacSlice( self , num , r , style,  type):
         #pie slices
-        if db.astrocfg["houses_system"] == "G":
-            offset = 360 - self.houses_degree_ut[18]
-        else:
-            offset = 360 - self.houses_degree_ut[6]
+        offset = 360 - self.wheelPivot()
         #check transit
         if self.type == "Transit":
             dropin=0
@@ -2773,8 +2996,9 @@ class openAstroInstance:
                 dropin=self.c3
                 roff=self.c1
                 
-            #offset is negative desc houses_degree_ut[6]
-            offset = (int(self.houses_degree_ut[int(xr/2)]) / -1) + int(self.houses_degree_ut[i])
+            #offset is negative desc wheelPivot() (true Descendant, or a
+            #fixed 180 under the Aries Rising chart view)
+            offset = (int(self.wheelPivot()) / -1) + int(self.houses_degree_ut[i])
             x1 = self.sliceToX( 0 , (r-dropin) , offset ) + dropin
             y1 = self.sliceToY( 0 , (r-dropin) , offset ) + dropin
             x2 = self.sliceToX( 0 , r-roff , offset ) + roff
@@ -2791,7 +3015,7 @@ class openAstroInstance:
             #transit houses lines
             if self.type == "Transit":
                 #degrees for point zero
-                zeropoint = 360 - self.houses_degree_ut[6]
+                zeropoint = 360 - self.wheelPivot()
                 t_offset = zeropoint + self.t_houses_degree_ut[i]
                 if t_offset > 360:
                     t_offset = t_offset - 360
@@ -3037,10 +3261,10 @@ class openAstroInstance:
                 
             rtext=45
             if db.astrocfg['houses_system'] == "G":
-                offset = (int(self.houses_degree_ut[18]) / -1) + int(self.planets_degree_ut[i])
+                offset = (int(self.wheelPivot()) / -1) + int(self.planets_degree_ut[i])
             else:
-                offset = (int(self.houses_degree_ut[6]) / -1) + int(self.planets_degree_ut[i]+planets_delta[e])
-                trueoffset = (int(self.houses_degree_ut[6]) / -1) + int(self.planets_degree_ut[i])
+                offset = (int(self.wheelPivot()) / -1) + int(self.planets_degree_ut[i]+planets_delta[e])
+                trueoffset = (int(self.wheelPivot()) / -1) + int(self.planets_degree_ut[i])
             planet_x = self.sliceToX( 0 , (r-rplanet) , offset ) + rplanet
             planet_y = self.sliceToY( 0 , (r-rplanet) , offset ) + rplanet
             if self.type == "Transit":
@@ -3141,7 +3365,7 @@ class openAstroInstance:
                     rplanet=26
                     switch = 1  
                 
-                zeropoint = 360 - self.houses_degree_ut[6]
+                zeropoint = 360 - self.wheelPivot()
                 t_offset = zeropoint + self.t_planets_degree_ut[i]
                 if t_offset > 360:
                     t_offset = t_offset - 360
@@ -3383,7 +3607,25 @@ class openAstroInstance:
         measure = getattr(self, 'transit_measure', 'ecliptic')
         if measure not in primary_engine.TRANSIT_MEASURE_KEYS:
             measure = 'ecliptic'
-        asc = (measure == 'ascensional' and getattr(self, 'solar_active', False)
+        #transit target: which natal point the transiting planets are
+        #compared against. "antiscion"/"contraantiscion" swap in the
+        #precomputed natal antiscia lists (makeSVG, Morinus antiscia.calc);
+        #the transiting body itself is always its own TRUE longitude
+        #(Morinus transits.py Transit.ANTISCION/.CONTRAANTISCION compare the
+        #transiting planet's true position, never its own antiscion). Since
+        #an antiscion point has no defined latitude, the ascensional (mundo)
+        #measure only applies to the natal target -- Morinus never pairs
+        #ascensional contacts with antiscia either.
+        target = getattr(self, 'transit_target', 'natal')
+        if target not in primary_engine.TRANSIT_TARGET_KEYS:
+            target = 'natal'
+        if target == 'antiscion':
+            natal_targets = list(getattr(self, 'planets_antiscia_ut', self.planets_degree_ut))
+        elif target == 'contraantiscion':
+            natal_targets = list(getattr(self, 'planets_contra_ut', self.planets_degree_ut))
+        else:
+            natal_targets = self.planets_degree_ut
+        asc = (measure == 'ascensional' and target == 'natal' and getattr(self, 'solar_active', False)
             and getattr(self, 'biwheel_single', '') == "TransitOuter")
         if asc:
             natal_lat = list(getattr(self, 'planets_latitude', []))
@@ -3393,7 +3635,7 @@ class openAstroInstance:
             jd_t = float(getattr(self, 't_jd', jd_n))
             geo_lat = float(self.geolat)
         for i in range(len(self.planets)):
-            start=self.planets_degree_ut[i]
+            start=natal_targets[i]
             for x in range(i+1):
                 end=self.t_planets_degree_ut[x]
                 if asc:
@@ -3422,7 +3664,16 @@ class openAstroInstance:
                         #check if we want to display this aspect    
                         if  ( float(self.aspects[z]['degree']) - orb_before ) <= diff <= ( float(self.aspects[z]['degree']) + 1.0 ):
                             if self.aspects[z]['visible'] == 1:
-                                out = out + self.drawAspect( r , ar , self.planets_degree_ut[i] , self.t_planets_degree_ut[x] , self.colors["aspect_%s" %(self.aspects[z]['degree'])] )     
+                                #the line must land on the same point `diff`
+                                #was measured from: `start` (the natal
+                                #target -- true position, antiscion or
+                                #contra-antiscion), not always the true
+                                #natal degree. Using the true degree
+                                #unconditionally here drew antiscion/
+                                #contra-antiscion aspect lines that did not
+                                #geometrically match the angle that
+                                #qualified them as an aspect.
+                                out = out + self.drawAspect( r , ar , start , self.t_planets_degree_ut[x] , self.colors["aspect_%s" %(self.aspects[z]['degree'])] )
                             #aspect grid dictionary
                             if self.aspects[z]['visible_grid'] == 1:
                                 self.atgrid.append({})
@@ -3961,6 +4212,18 @@ class mainWindow:
         self.window.connect("destroy", lambda w: Gtk.main_quit())
         self.window.set_title("OpenAstro.org")
         self.window.set_icon_from_file(cfg.iconWindow)
+        # Some window managers hide the minimize/maximize buttons for windows
+        # without an explicit NORMAL type hint, or for non-resizable windows.
+        # Neither is set anywhere else for this window, but make both explicit
+        # rather than rely on the GTK defaults -- and ask for the standard
+        # button layout at the GTK level too, as a fallback that doesn't
+        # depend on the window manager's own default decoration layout.
+        self.window.set_type_hint(Gdk.WindowTypeHint.NORMAL)
+        self.window.set_decorated(True)
+        self.window.set_resizable(True)
+        Gtk.Settings.get_default().set_property(
+            "gtk-decoration-layout", "menu:minimize,maximize,close"
+        )
         # default size (used when unmaximized); the window is maximized after show_all()
         try:
             w = min(int(openAstro.screen_width * 0.9), 1280) if openAstro.screen_width > 0 else 1280
@@ -4050,9 +4313,12 @@ class mainWindow:
         special_menu.append(mi(_('Antiscia Chart'), self.specialAntiscia, 'Antiscia'))
         special_menu.append(mi(_('Primary Directions'), self.specialDirected, 'Directed'))
         special_menu.append(mi(_('Atacir Chart'), self.specialAtacir, 'Atacir'))
+        special_menu.append(mi(_('Harmonic Chart'), self.specialHarmonic, 'Harmonic'))
         #bi-wheel view selector for Solar Return / Lunar Return /
         #Secondary Progression / Transit Chart / Synastry / Dodecatemoria /
-        #Antiscia / Primary Directions / Atacir: both, natal (inner) only, or outer only
+        #Antiscia / Primary Directions / Atacir: both, natal (inner) only, or outer only.
+        #The Harmonic Chart is not part of this group -- it is a single
+        #wheel from the start, so it has nothing for "Chart View" to switch.
         special_menu.append(Gtk.SeparatorMenuItem())
         srv_top, srv_menu = submenu(_('Chart View'))
         srv_group = None
@@ -4068,6 +4334,15 @@ class mainWindow:
         for srv_it, srv_mode in self._srv_items:
             srv_it.connect('toggled', self.solarView, srv_mode)
         special_menu.append(srv_top)
+        #Aries Rising: purely presentational -- rotates the whole wheel so
+        #0 Aries sits at the horizon instead of the chart's true Ascendant
+        #(see wheelPivot() on openAstroInstance). Applies to any chart
+        #type and is independent of the Both/Inner/Outer selector above,
+        #so a plain checkbox rather than another radio group.
+        self._aries_rising_item = Gtk.CheckMenuItem(label=_('Aries Rising (0° Aries at Horizon)'), use_underline=True)
+        self._aries_rising_item.set_active(False)
+        self._aries_rising_item.connect('toggled', self.ariesRisingToggle)
+        special_menu.append(self._aries_rising_item)
         menubar.append(special_top)
 
         #Tables
@@ -4080,6 +4355,7 @@ class mainWindow:
         tables_menu.append(mi(_('Arabic Parts'), self.tableArabicParts, 'ArabicParts'))
         tables_menu.append(mi(_('Profections'), self.tableProfections, 'Profections'))
         tables_menu.append(mi(_('Cyclic Index'), self.tableCyclicIndex, 'CyclicIndex'))
+        tables_menu.append(mi(_('Ingresses, Lunations, Eclipses'), self.tableMundane, 'Mundane'))
         tables_menu.append(mi(_('Harmogram'), self.tableHarmogram, 'Harmogram'))
         tables_menu.append(mi(_('Harmonic Flower'), self.tableHarmonicFlower, 'HarmonicFlower'))
         menubar.append(tables_top)
@@ -4295,6 +4571,16 @@ class mainWindow:
         self.draw.setSVG(self.tempfilename)
         return
 
+    def ariesRisingToggle(self, widget):
+        #toggle the "Aries Rising" wheel rotation (0 Aries fixed at the
+        #horizon instead of the true Ascendant); see wheelPivot() on
+        #openAstroInstance -- purely a redraw, no chart data changes
+        openAstro.aries_rising = widget.get_active()
+        openAstro.makeSVG()
+        self.draw.queue_draw()
+        self.draw.setSVG(self.tempfilename)
+        return
+
     def _resetChartViewBoth(self):
         #a fresh bi-wheel defaults to the Both view; setting the radio
         #may emit 'toggled' and redraw via solarView, which is harmless
@@ -4419,8 +4705,9 @@ class mainWindow:
             
     def specialTransit(self, widget):
         #dialog asks the date and time of the transit, the direction
-        #(direct or converse) and the measure (ecliptic longitudes or
-        #ascensional mundo contacts), then draws the bi-wheel: radix
+        #(direct or converse), the measure (ecliptic longitudes or
+        #ascensional mundo contacts) and the target (natal positions,
+        #antiscia or contra-antiscia), then draws the bi-wheel: radix
         #inside, transit outside. Last used values are kept in astrocfg;
         #"Now" puts the current moment back in the fields.
         self.win_ST = Gtk.Dialog(parent=self.window)
@@ -4429,7 +4716,7 @@ class mainWindow:
         self.win_ST.connect("delete_event", lambda w,e: self.win_ST.destroy())
         self.win_ST.move(150,150)
         self.win_ST.set_border_width(5)
-        self.win_ST.set_size_request(360,260)
+        self.win_ST.set_size_request(360,300)
 
         table = Gtk.Table(n_rows=1, n_columns=4, homogeneous=False)
         table.set_border_width(10)
@@ -4502,6 +4789,22 @@ class mainWindow:
         hbox.pack_start(entry['S'], False, False, 0)
         table.attach(hbox,0,1,4,5, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
+        #target: natal true positions (default), or the natal antiscia /
+        #contra-antiscia points (Morinus transits.py Transit.ANTISCION /
+        #.CONTRAANTISCION) -- which transiting planets aspect the natal
+        #antiscia rather than the natal planets themselves
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Target')+": "), False, False, 0)
+        self.transit_target_list = ["natal", "antiscion", "contraantiscion"]
+        entry['T'] = Gtk.ComboBoxText.new()
+        entry['T'].append_text(_("Natal positions"))
+        entry['T'].append_text(_("Antiscia"))
+        entry['T'].append_text(_("Contra-antiscia"))
+        last_target = last('transit_target', "natal")
+        entry['T'].set_active(self.transit_target_list.index(last_target) if last_target in self.transit_target_list else 0)
+        hbox.pack_start(entry['T'], False, False, 0)
+        table.attach(hbox,0,1,5,6, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
         self.win_ST.vbox.pack_start(table, True, True, 0)
 
         button = Gtk.Button.new_with_mnemonic(_("_OK"))
@@ -4537,10 +4840,14 @@ class mainWindow:
         measure = self.transit_measure_list[entry['S'].get_active()]
         if measure not in primary_engine.TRANSIT_MEASURE_KEYS:
             measure = "ecliptic"
+        target = self.transit_target_list[entry['T'].get_active()]
+        if target not in primary_engine.TRANSIT_TARGET_KEYS:
+            target = "natal"
         #remember last used parameters in astrocfg for the next run
         db.setAstrocfg('transit_dir', '1' if converse else '0')
         db.setAstrocfg('transit_measure', measure)
-        openAstro.localToTransit(dt_local, converse, measure)
+        db.setAstrocfg('transit_target', target)
+        openAstro.localToTransit(dt_local, converse, measure, target)
         self.win_ST.destroy()
         #a fresh transit chart defaults to the bi-wheel view
         self._resetChartViewBoth()
@@ -4590,7 +4897,19 @@ class mainWindow:
         return
     
     def specialSolarSubmit(self, widget, entry):
-        intyear = int(entry.get_text())
+        #a bad year must leave the dialog open and say so, not raise behind it
+        try:
+            intyear = int(entry.get_text())
+        except ValueError:
+            md = Gtk.MessageDialog(self.win_SS,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Enter a valid year"))
+            md.run(); md.destroy()
+            return
+        if not (1000 <= intyear <= 9999):
+            md = Gtk.MessageDialog(self.win_SS,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Year must be 1000..9999"))
+            md.run(); md.destroy()
+            return
         openAstro.localToSolar(intyear)
         self.win_SS.destroy()
         #a fresh solar return defaults to the bi-wheel view
@@ -4657,8 +4976,16 @@ class mainWindow:
             intmonth = int(entry['M'].get_text())
             intday = int(entry['D'].get_text())
         except ValueError:
+            md = Gtk.MessageDialog(self.win_SL,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Enter a valid date (Y-M-D)"))
+            md.run(); md.destroy()
             return
-        if not (1 <= intmonth <= 12) or not (1 <= intday <= 31):
+        try:
+            datetime.datetime(intyear, intmonth, intday)
+        except ValueError:
+            md = Gtk.MessageDialog(self.win_SL,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Enter a valid date (Y-M-D)"))
+            md.run(); md.destroy()
             return
         openAstro.localToLunar(intyear, intmonth, intday)
         self.win_SL.destroy()
@@ -4740,7 +5067,13 @@ class mainWindow:
         return
 
     def specialSecondaryProgressionSubmit(self, widget, entry):
-        dt  = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()),int(entry['h'].get_text()),int(entry['m'].get_text()))
+        try:
+            dt  = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()),int(entry['h'].get_text()),int(entry['m'].get_text()))
+        except ValueError:
+            md = Gtk.MessageDialog(self.win_SSP,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Enter a valid date and time (Y-M-D h:m)"))
+            md.run(); md.destroy()
+            return
         openAstro.localToSecondaryProgression(dt)
         self.win_SSP.destroy()
         #a fresh progression defaults to the bi-wheel view
@@ -4929,7 +5262,13 @@ class mainWindow:
         return
 
     def specialDirectedSubmit(self, widget, entry):
-        dt  = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()),int(entry['h'].get_text()),int(entry['m'].get_text()))
+        try:
+            dt  = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()),int(entry['h'].get_text()),int(entry['m'].get_text()))
+        except ValueError:
+            md = Gtk.MessageDialog(self.win_SPD,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Enter a valid date and time (Y-M-D h:m)"))
+            md.run(); md.destroy()
+            return
         key = self.directed_key_list[entry['K'].get_active()]
         converse = entry['R'].get_active() == 1
         measure = self.directed_measure_list[entry['S'].get_active()]
@@ -4980,6 +5319,22 @@ class mainWindow:
             hbox.pack_start(entry[k], False, False, 0)
         table.attach(hbox,0,1,1,2, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
+        #mapping: Zodiacal (Demetrio Santos' atacir, a rigid rotation) or
+        #Placidian (Morinus' mundane profection, openastromod.munprofection
+        #-- relocates the chart and repositions each body by its own
+        #mundane speculum instead of turning the whole wheel by a constant
+        #arc). Placidian is always the same technique, so the cycle and
+        #rate controls below are not meaningful for it and get disabled.
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Mapping')+": "), False, False, 0)
+        self.atacir_mapping_list = ["zodiacal", "placidian"]
+        entry['X']=Gtk.ComboBoxText()
+        entry['X'].append_text(_("Zodiacal (rigid rotation)"))
+        entry['X'].append_text(_("Placidian (mundane profection)"))
+        entry['X'].set_active(1 if last('atacir_mapping', 'zodiacal') == 'placidian' else 0)
+        hbox.pack_start(entry['X'], False, False, 0)
+        table.attach(hbox,0,1,2,3, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
         #cycle: any integer in [1, 360]. C-12 is the reference cycle (annual
         #profections), C-360 the 1 deg/year symbolic directions. A rate
         #label next to the field says what the chosen cycle means.
@@ -5008,7 +5363,7 @@ class mainWindow:
             rate.set_text("  %d°%02d' %s  (%s)" % (d, m, _("per year"), turn))
         entry['C'].connect("value-changed", show_rate)
         show_rate()
-        table.attach(hbox,0,1,2,3, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+        table.attach(hbox,0,1,3,4, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
         #rate: the constant 360/N, or the progressed Sun's own travel.
         #Both turn the chart rigidly; only the source of the arc differs.
@@ -5020,18 +5375,25 @@ class mainWindow:
         entry['K'].append_text(_("Solar arc (progressed Sun)"))
         entry['K'].set_active(1 if last('atacir_key', 'cycle') == 'solar_arc' else 0)
         hbox.pack_start(entry['K'], False, False, 0)
-        table.attach(hbox,0,1,3,4, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+        table.attach(hbox,0,1,4,5, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
         def sync_rate(*_a):
-            #the cycle means nothing when the Sun supplies the arc
-            on = entry['K'].get_active() == 0
+            #the cycle means nothing when the Sun supplies the arc, or when
+            #the Placidian mapping is active (it is always the one
+            #technique: no cycle, no solar arc, just elapsed years)
+            zodiacal = entry['X'].get_active() == 0
+            on = zodiacal and entry['K'].get_active() == 0
             entry['C'].set_sensitive(on)
             rate.set_sensitive(on)
-            if on:
+            entry['K'].set_sensitive(zodiacal)
+            if not zodiacal:
+                rate.set_text("  %s" % (_("Placidian: relocates the chart, no fixed rate"),))
+            elif on:
                 show_rate()
             else:
                 rate.set_text("  %s" % (_("about 1° a year, from the ephemeris"),))
         entry['K'].connect("changed", sync_rate)
+        entry['X'].connect("changed", sync_rate)
 
         #direct or converse
         hbox = Gtk.HBox(spacing=4)
@@ -5041,11 +5403,11 @@ class mainWindow:
         entry['R'].append_text(_("Converse"))
         entry['R'].set_active(1 if last('atacir_dir', '0') == '1' else 0)
         hbox.pack_start(entry['R'], False, False, 0)
-        table.attach(hbox,0,1,4,5, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+        table.attach(hbox,0,1,5,6, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
 
         button = Gtk.Button(label=_("Submit"))
         button.connect("clicked", self.specialAtacirSubmit, entry)
-        table.attach(button,0,1,5,6, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+        table.attach(button,0,1,6,7, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
         sync_rate()
 
         self.win_SAT.vbox.pack_start(table, True, True, 0)
@@ -5053,28 +5415,97 @@ class mainWindow:
         return
 
     def specialAtacirSubmit(self, widget, entry):
-        dt = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()))
-        cycle = atacir_engine.valid_cycle(entry['C'].get_value_as_int())
+        try:
+            dt = datetime.datetime(int(entry['Y'].get_text()),int(entry['M'].get_text()),int(entry['D'].get_text()))
+        except ValueError:
+            md = Gtk.MessageDialog(self.win_SAT,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Enter a valid date (Y-M-D)"))
+            md.run(); md.destroy()
+            return
+        mapping = self.atacir_mapping_list[entry['X'].get_active()]
         converse = entry['R'].get_active() == 1
-        key = self.atacir_key_list[entry['K'].get_active()]
         #remember last used parameters in astrocfg for the next run
-        db.setAstrocfg('atacir_cycle', str(cycle))
+        db.setAstrocfg('atacir_mapping', mapping)
         db.setAstrocfg('atacir_dir', '1' if converse else '0')
-        db.setAstrocfg('atacir_key', key)
-        openAstro.localToAtacir(dt, cycle, converse, key)
+        if mapping == 'placidian':
+            openAstro.localToMunProfection(dt, converse)
+        else:
+            cycle = atacir_engine.valid_cycle(entry['C'].get_value_as_int())
+            key = self.atacir_key_list[entry['K'].get_active()]
+            db.setAstrocfg('atacir_cycle', str(cycle))
+            db.setAstrocfg('atacir_key', key)
+            openAstro.localToAtacir(dt, cycle, converse, key)
         self.win_SAT.destroy()
         #a fresh atacir chart defaults to the bi-wheel view
         self._resetChartViewBoth()
         self.updateChart()
         return
 
+    def specialHarmonic(self, widget):
+        #dialog: a single spin button for the harmonic order N (every radix
+        #longitude multiplied by N, folded mod 360 -- see
+        #openastromod/harmonics.py). No date to pick: like Dodecatemoria
+        #and Antiscia, it derives entirely from the radix, and unlike those
+        #it draws as a single wheel from the start, so there is no
+        #inner/outer view to offer either.
+        self.win_SH = Gtk.Dialog(parent=self.window)
+        self.win_SH.set_icon_from_file(cfg.iconWindow)
+        self.win_SH.set_title(_("Harmonic Chart"))
+        self.win_SH.connect("delete_event", lambda w,e: self.win_SH.destroy())
+        self.win_SH.move(150,150)
+        self.win_SH.set_border_width(5)
+        self.win_SH.set_size_request(300,120)
+
+        table = Gtk.Table(n_rows=1, n_columns=1, homogeneous=False)
+        table.set_border_width(10)
+
+        #harmonic order: any integer in [MIN_HARMONIC, MAX_HARMONIC], the
+        #same range the engine itself accepts (see harmonics.py for why
+        #360 -- a generous ceiling, not a structural limit like the atacir
+        #cycle's). Last used value is remembered in astrocfg.
+        hbox = Gtk.HBox(spacing=4)
+        hbox.pack_start(Gtk.Label(label=_('Harmonic')+": "), False, False, 0)
+        entry=Gtk.SpinButton()
+        last_n = db.getAstrocfg('harmonic_n')
+        entry.set_adjustment(Gtk.Adjustment(
+            value=harmonics_engine.valid_harmonic(last_n if last_n is not None else harmonics_engine.DEFAULT_HARMONIC),
+            lower=harmonics_engine.MIN_HARMONIC, upper=harmonics_engine.MAX_HARMONIC,
+            step_increment=1, page_increment=10))
+        entry.set_numeric(True)
+        entry.set_width_chars(4)
+        hbox.pack_start(entry, False, False, 0)
+        table.attach(hbox,0,1,0,1, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10, ypadding=10)
+
+        self.win_SH.vbox.pack_start(table, True, True, 0)
+
+        button = Gtk.Button.new_with_mnemonic(_("_OK"))
+        button.connect("clicked", self.specialHarmonicSubmit, entry)
+        button.set_can_default(True)
+        self.win_SH.action_area.pack_start(button, True, True, 0)
+        button.grab_default()
+
+        button = Gtk.Button.new_with_mnemonic(_("_Cancel"))
+        button.connect("clicked", lambda w: self.win_SH.destroy())
+        self.win_SH.action_area.pack_start(button, True, True, 0)
+
+        self.win_SH.show_all()
+        return
+
+    def specialHarmonicSubmit(self, widget, entry):
+        n = harmonics_engine.valid_harmonic(entry.get_value_as_int())
+        #remember the last used harmonic order in astrocfg for the next run
+        db.setAstrocfg('harmonic_n', str(n))
+        openAstro.localToHarmonic(n)
+        self.win_SH.destroy()
+        self.updateChart()
+        return
 
     def tableMonthlyTimeline(self, widget):
-        dialog = Gtk.Dialog(_("Select Month"),
-                     self.window,
-                     0,
-                     (_("_Cancel"), Gtk.ResponseType.REJECT,
-                      _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog = Gtk.Dialog(title=_("Select Month"),
+                            transient_for=self.window,
+                            flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT,
+                           _("_OK"), Gtk.ResponseType.ACCEPT)
 
         dialog.set_destroy_with_parent(True)
         dialog.connect("destroy", lambda w: dialog.destroy())
@@ -5228,6 +5659,12 @@ class mainWindow:
             _rsvg_render(svg, cr)
         elif(self.tabletype == "harmogram"):
             self.tableHarmogramShow(printing)
+            #draw svg for printing
+            svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
+            svg.set_dpi(900)
+            _rsvg_render(svg, cr)
+        elif(self.tabletype == "mundane"):
+            self.tableMundaneShow(printing)
             #draw svg for printing
             svg = Rsvg.Handle.new_from_file(cfg.tempfilenametableprint)
             svg.set_dpi(900)
@@ -6495,11 +6932,11 @@ class mainWindow:
         #before anything can be drawn, so this half only asks. The index is
         #mundane, not natal, but the chart's own year makes a sane default
         #centre and gets marked on the curve.
-        dialog = Gtk.Dialog(_("Cyclic Index"),
-                     self.window,
-                     0,
-                     (_("_Cancel"), Gtk.ResponseType.REJECT,
-                      _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog = Gtk.Dialog(title=_("Cyclic Index"),
+                            transient_for=self.window,
+                            flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT,
+                           _("_OK"), Gtk.ResponseType.ACCEPT)
         dialog.set_destroy_with_parent(True)
         dialog.connect("destroy", lambda w: dialog.destroy())
         dialog.set_size_request(240, 240)
@@ -6829,17 +7266,275 @@ class mainWindow:
             self.win_TCI.show_all()
         return
 
+    def tableMundane(self, widget):
+        #Ingresses, lunations, eclipses: a mundane calendar over a date
+        #range (openastromod/mundane.py). Dates never persist (every
+        #technique dialog opens on the current moment, per CLAUDE.md); the
+        #category checkboxes do, like Harmogram's reading mode.
+        dialog = Gtk.Dialog(title=_("Ingresses, Lunations, Eclipses"),
+                            transient_for=self.window,
+                            flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT,
+                           _("_OK"), Gtk.ResponseType.ACCEPT)
+        dialog.set_destroy_with_parent(True)
+        dialog.connect("destroy", lambda w: dialog.destroy())
+        dialog.set_border_width(5)
+        dialog.move(50,50)
+        now = datetime.datetime.now()
+        self.tMUwidget={}
+
+        def last(key, default):
+            val = db.getAstrocfg(key)
+            return val if val is not None else default
+
+        #From/To, defaulting to the current calendar year
+        for k, lbl, default in (('F', 'From', datetime.date(now.year, 1, 1)),
+                                 ('T', 'To', datetime.date(now.year + 1, 1, 1))):
+            dialog.vbox.pack_start(Gtk.Label(label=_(lbl)+":"), False, False, 2)
+            hbox = Gtk.HBox(spacing=4)
+            for f, sub, ln, val in (('Y', 'Year', 4, default.year),
+                                     ('M', 'Month', 2, default.month),
+                                     ('D', 'Day', 2, default.day)):
+                hbox.pack_start(Gtk.Label(label=_(sub)+": "), False, False, 0)
+                w = Gtk.Entry()
+                w.set_max_length(ln)
+                w.set_width_chars(ln)
+                w.set_text(str(val))
+                self.tMUwidget[k+f] = w
+                hbox.pack_start(w, False, False, 0)
+            dialog.vbox.pack_start(hbox, False, False, 2)
+
+        #categories -- Sun ingresses and lunations and eclipses on by
+        #default; Moon ingresses off, since it alone runs to ~150 rows a
+        #year (see openastromod/mundane.py's module docstring)
+        dialog.vbox.pack_start(Gtk.Label(label=_('Include')+":"), False, False, 2)
+        cat_defs = (('ingress_sun', _('Solar ingresses (equinoxes, solstices, monthly)'), '1'),
+                    ('ingress_moon', _('Lunar ingresses (Moon changes sign, ~13/month)'), '0'),
+                    ('lunation', _('Lunations (new and full moon)'), '1'),
+                    ('eclipse', _('Eclipses (solar and lunar)'), '1'))
+        for key, label, default in cat_defs:
+            cb = Gtk.CheckButton(label=label)
+            cb.set_active(last('mundane_%s' % (key,), default) == '1')
+            dialog.vbox.pack_start(cb, False, False, 0)
+            self.tMUwidget[key] = cb
+        dialog.show_all()
+
+        ret = dialog.run()
+        if ret != Gtk.ResponseType.ACCEPT:
+            dialog.destroy()
+            return
+        try:
+            dt_from = datetime.datetime(
+                int(self.tMUwidget['FY'].get_text()), int(self.tMUwidget['FM'].get_text()),
+                int(self.tMUwidget['FD'].get_text()))
+            dt_to = datetime.datetime(
+                int(self.tMUwidget['TY'].get_text()), int(self.tMUwidget['TM'].get_text()),
+                int(self.tMUwidget['TD'].get_text()))
+        except ValueError:
+            dialog.destroy()
+            md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("From and To must be valid dates"))
+            md.run(); md.destroy()
+            return
+        categories = tuple(key for key, label, default in cat_defs
+                            if self.tMUwidget[key].get_active())
+        #span guard: solar+lunations+eclipses are a few hundred rows a
+        #decade, but Moon ingresses alone run ~150/year -- 40 years of it
+        #is ~6000 rows, right at openastromod.mundane's own safety cap
+        span_days = (dt_to - dt_from).days
+        if dt_to <= dt_from or span_days > 40 * 365:
+            dialog.destroy()
+            md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,
+                _("To must be after From, and the span must not exceed 40 years"))
+            md.run(); md.destroy()
+            return
+        if not categories:
+            dialog.destroy()
+            md = Gtk.MessageDialog(self.window,0,Gtk.MessageType.ERROR,
+                Gtk.ButtonsType.CLOSE,_("Select at least one category to include"))
+            md.run(); md.destroy()
+            return
+        dialog.destroy()
+        for key, label, default in cat_defs:
+            db.setAstrocfg('mundane_%s' % (key,), '1' if key in categories else '0')
+        self.tMUentry = {'F': dt_from, 'T': dt_to, 'categories': categories}
+        self.tableMundaneShow()
+        return
+
+    def tableMundaneShow(self, printing=None):
+        #Ingresses, lunations and eclipses, listed in date order. See
+        #openastromod/mundane.py for the search itself -- this half only
+        #formats what it returns into a paginated text table, the same
+        #shape as the Fixed Stars table and the Cyclic Index turning-point
+        #list this was modelled on.
+        self.tabletype="mundane"
+        try:
+            dt_from = self.tMUentry['F']
+            dt_to = self.tMUentry['T']
+            categories = self.tMUentry['categories']
+        except (AttributeError, KeyError, TypeError):
+            return
+
+        rows = mundane_engine.search(dt_from, dt_to, categories=categories)
+
+        def planet_label(i):
+            try:
+                return openAstro.planets[i]['label']
+            except (IndexError, KeyError):
+                return str(i)
+
+        def sign_label(s):
+            try:
+                return openAstro.zodiac[s].capitalize()
+            except IndexError:
+                return str(s)
+
+        def describe(r):
+            if r['category'] in ('ingress_sun', 'ingress_moon'):
+                return _("%s enters %s") % (planet_label(r['planet']), sign_label(r['sign']))
+            elif r['category'] == 'lunation':
+                kind = _("New Moon") if r['kind'] == 'new' else _("Full Moon")
+                return "%s (%s)" % (kind, sign_label(r['sign']))
+            else:
+                body = _("Solar") if r['body'] == 'sun' else _("Lunar")
+                kindmap = {'total': _('total'), 'partial': _('partial'),
+                    'annular': _('annular'), 'hybrid': _('hybrid'),
+                    'penumbral': _('penumbral')}
+                return _("%s eclipse (%s)") % (body, kindmap.get(r['kind'], r['kind']))
+
+        def category_label(cat):
+            return {'ingress_sun': _('Ingress'), 'ingress_moon': _('Ingress'),
+                'lunation': _('Lunation'), 'eclipse': _('Eclipse')}.get(cat, cat)
+
+        ink = openAstro.colors['paper_0']
+        textstyle = "font-size: 12px; fill: %s" % (ink,)
+        headerstyle = "font-size: 13px; font-weight: bold; fill: %s" % (ink,)
+        captionstyle = "font-size: 10px; fill: %s" % (ink,)
+        gridstyle = 'stroke:%s; stroke-width: 1px; stroke-opacity:.6; fill:none' % (ink,)
+
+        ROW_H = 22.0
+        TOP_INSET = 70.0
+        BOTTOM_INSET = 40.0
+        PAGE_H = 1188.0
+        PITCH = 1198.0
+        col_date, col_cat, col_detail = 0, 130, 230
+
+        def page_y(p):
+            return p * PITCH - 40.0
+
+        def headers(y):
+            h = '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_date, y, headerstyle, _("Date (UT)"))
+            h += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_cat, y, headerstyle, _("Kind"))
+            h += '<text x="%s" y="%s" style="%s">%s</text>\n' % (col_detail, y, headerstyle, _("Event"))
+            return h
+
+        out = '<g>'
+        out += '<text x="0" y="%s" style="%s">%s - %s \xb7 %d %s</text>\n' % (
+            page_y(0) + 54, captionstyle, dt_from.strftime('%Y-%m-%d'), dt_to.strftime('%Y-%m-%d'),
+            len(rows), _("events"))
+
+        page = 0
+        y = page_y(page) + TOP_INSET + 20.0
+        limit = page_y(page) + PAGE_H - BOTTOM_INSET
+        out += headers(y)
+        if not rows:
+            y += ROW_H
+            out += '<text x="0" y="%s" style="%s">%s</text>\n' % (
+                y, textstyle, _("No events in this range with the categories selected"))
+        for r in rows:
+            y += ROW_H
+            if y > limit:
+                page += 1
+                y = page_y(page) + TOP_INSET + 20.0
+                limit = page_y(page) + PAGE_H - BOTTOM_INSET
+                out += headers(y)
+                y += ROW_H
+            out += '<rect x="-15" y="%s" width="805" height="%s" style="%s"/>\n' % (
+                y - 15, ROW_H - 4, gridstyle)
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (
+                col_date, y, textstyle, r['date'].strftime('%Y-%m-%d %H:%M'))
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (
+                col_cat, y, textstyle, category_label(r['category']))
+            out += '<text x="%s" y="%s" style="%s">%s</text>\n' % (
+                col_detail, y, textstyle, describe(r))
+        out += "</g>"
+        pages = page + 1
+
+        td = {}
+        td['paper_color_0']=openAstro.colors["paper_0"]
+        td['paper_color_1']=openAstro.colors["paper_1"]
+        for i in range(len(openAstro.planets)):
+            td['planets_color_%s'%(i)]=openAstro.colors["planet_%s"%(i)]
+        for i in range(12):
+            td['zodiac_color_%s'%(i)]=openAstro.colors["zodiac_icon_%s" %(i)]
+        for i in range(len(openAstro.aspects)):
+            td['orb_color_%s'%(openAstro.aspects[i]['degree'])]=openAstro.colors["aspect_%s" %(openAstro.aspects[i]['degree'])]
+        td['stringTitle'] = "Ingresses, Lunations, Eclipses %s - %s"%(
+            dt_from.strftime('%Y-%m-%d'), dt_to.strftime('%Y-%m-%d'))
+
+        pagesY = (1188 * pages)+10
+        if printing:
+            td['svgWidth'] = printing['width']
+            td['svgHeight'] = printing['height']
+            td['viewbox'] = "0 %s 840 1188" %( printing['pagenum']*(1188+10) )
+        else:
+            td['svgWidth'] = 1050
+            td['svgHeight'] = (td['svgWidth']/840.0)* pagesY
+            td['viewbox'] = "0 0 840 %s" %( pagesY )
+
+        td['data'] = out
+        td['pagesRect'] = ''.join(
+            '<rect x="0" y="%s" width="840" height="1188" style="fill: %s;" />' % (
+                p * (1188 + 10), openAstro.colors['paper_1'])
+            for p in range(pages))
+
+        f=open(cfg.xml_svg_table)
+        template=Template(f.read()).substitute(td)
+        f.close()
+        if printing:
+            f=open(cfg.tempfilenametableprint,"w")
+        else:
+            f=open(cfg.tempfilenametable,"w")
+        f.write(template)
+        f.close()
+
+        if printing == None:
+            self.win_TMU = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+            self.win_TMU.connect("destroy", lambda w: self.win_TMU.destroy())
+            self.win_TMU.set_title("OpenAstro.org Ingresses, Lunations, Eclipses")
+            self.win_TMU.set_icon_from_file(cfg.iconWindow)
+            self.win_TMU.set_size_request(td['svgWidth']+30, 700)
+            self.win_TMU.move(50,50)
+            vbox = Gtk.VBox()
+            hbox = Gtk.HBox()
+            button = Gtk.Button(label=_('Print'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=False,window=self.win_TMU,name="mundane-%s-%s.pdf"%(dt_from.strftime('%Y%m%d'),dt_to.strftime('%Y%m%d'))))
+            hbox.pack_start(button,False,False,0)
+            button = Gtk.Button(label=_('Save as PDF'))
+            button.connect("clicked", lambda w: self.tableMonthlyTimelinePrint(pages=pages,pdf=True,window=self.win_TMU,name="mundane-%s-%s.pdf"%(dt_from.strftime('%Y%m%d'),dt_to.strftime('%Y%m%d'))))
+            hbox.pack_start(button,False,False,0)
+            vbox.pack_start(hbox,False,False,0)
+            draw = drawSVG()
+            draw.setSVG(cfg.tempfilenametable)
+            scrolledwindow = Gtk.ScrolledWindow()
+            scrolledwindow.add(draw)
+            scrolledwindow.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            vbox.pack_start(scrolledwindow,True,True,0)
+            self.win_TMU.add(vbox)
+            self.win_TMU.show_all()
+        return
 
     def tableHarmogram(self, widget):
         #Harmogram: how loud each of the first twelve harmonics is, traced
         #across a window of days. Everything asked here is one of ARMON's
         #own `.DHQ` fields -- FCH the centre date, NDY the days, NDP the
         #samples per day, PRE/PEM which set is measured against which.
-        dialog = Gtk.Dialog(_("Harmogram"),
-                     self.window,
-                     0,
-                     (_("_Cancel"), Gtk.ResponseType.REJECT,
-                      _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog = Gtk.Dialog(title=_("Harmogram"),
+                            transient_for=self.window,
+                            flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT,
+                           _("_OK"), Gtk.ResponseType.ACCEPT)
         dialog.set_destroy_with_parent(True)
         dialog.connect("destroy", lambda w: dialog.destroy())
         dialog.set_border_width(5)
@@ -7414,7 +8109,8 @@ class mainWindow:
         return
 
     def aboutInfo(self, widget):
-        dialog=Gtk.Dialog('Info',self.window,0,(_("_OK"), Gtk.ResponseType.DELETE_EVENT))
+        dialog=Gtk.Dialog(title='Info',transient_for=self.window,flags=0)
+        dialog.add_buttons(_("_OK"), Gtk.ResponseType.DELETE_EVENT)
         dialog.set_icon_from_file(cfg.iconWindow)
         dialog.connect("response", lambda w,e: dialog.destroy())                
         dialog.connect("close", lambda w,e: dialog.destroy())
@@ -7649,11 +8345,17 @@ class mainWindow:
             openAstro.solar_active=True
             openAstro.biwheel_single="TransitOuter"
             #synastry reuses the transit aspects: follow the saved transit
-            #measure (ecliptic default) so mundo synastry works the same way
+            #measure (ecliptic default) so mundo synastry works the same way,
+            #and likewise the saved target (natal default) so a synastry
+            #partner's planets can be checked against this chart's antiscia
             saved_measure = db.getAstrocfg('transit_measure')
             if saved_measure not in primary_engine.TRANSIT_MEASURE_KEYS:
                 saved_measure = "ecliptic"
             openAstro.transit_measure = saved_measure
+            saved_target = db.getAstrocfg('transit_target')
+            if saved_target not in primary_engine.TRANSIT_TARGET_KEYS:
+                saved_target = "natal"
+            openAstro.transit_target = saved_target
             openAstro.t_name=str(list["name"])
             openAstro.t_year=int(list["year"])
             openAstro.t_month=int(list["month"])
@@ -7755,7 +8457,8 @@ class mainWindow:
             if self.DB[i]["id"] == model.get_value(iter,3):
                 self.ODDlist = self.DB[i]
         name = self.ODDlist["name"]
-        dialog=Gtk.Dialog(_('Question'),self.win_OD,0,(_("_Cancel"), Gtk.ResponseType.REJECT, _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog=Gtk.Dialog(title=_('Question'),transient_for=self.win_OD,flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT, _("_OK"), Gtk.ResponseType.ACCEPT)
         dialog.set_destroy_with_parent(True)
         dialog.connect("close", lambda w,e: dialog.destroy())
         dialog.connect("response",self.openDatabaseDelDo)
@@ -7811,7 +8514,8 @@ class mainWindow:
         en = db.getDatabase()
         for i in range(len(en)):
             if en[i]["name"] == self.name.get_text() and self.oDE_list["id"] != en[i]["id"]:
-                dialog=Gtk.Dialog(_('Duplicate'),self.window2,0,(_("_OK"), Gtk.ResponseType.DELETE_EVENT))
+                dialog=Gtk.Dialog(title=_('Duplicate'),transient_for=self.window2,flags=0)
+                dialog.add_buttons(_("_OK"), Gtk.ResponseType.DELETE_EVENT)
                 dialog.set_icon_from_file(cfg.iconWindow)           
                 dialog.connect("response", lambda w,e: dialog.destroy())                
                 dialog.connect("close", lambda w,e: dialog.destroy())
@@ -7819,7 +8523,8 @@ class mainWindow:
                 dialog.show_all()               
                 return
         #ask for confirmation
-        dialog=Gtk.Dialog(_('Question'),self.window2,0,(_("_Cancel"), Gtk.ResponseType.REJECT, _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog=Gtk.Dialog(title=_('Question'),transient_for=self.window2,flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT, _("_OK"), Gtk.ResponseType.ACCEPT)
         dialog.set_destroy_with_parent(True)
         dialog.set_icon_from_file(cfg.iconWindow)
         dialog.connect("close", lambda w,e: dialog.destroy())
@@ -8014,9 +8719,10 @@ class mainWindow:
         table.attach(data['zodiactype'], 0, 1, 10, 11, xoptions=Gtk.AttachOptions.SHRINK, yoptions=Gtk.AttachOptions.SHRINK, xpadding=10)
         chartview={
                 "tropical":_("Tropical"),
-                "sidereal":_("Sidereal")
-                }       
-        self.zodiactype_list=["tropical","sidereal"]
+                "sidereal":_("Sidereal"),
+                "draconic":_("Draconic")
+                }
+        self.zodiactype_list=["tropical","sidereal","draconic"]
         active=0
         for n in range(len(self.zodiactype_list)):
             data['zodiactype'].append_text(chartview[self.zodiactype_list[n]])
@@ -9690,7 +10396,8 @@ class mainWindow:
         en = db.getDatabase()
         for i in range(len(en)):
             if en[i]["name"] == self.name.get_text():
-                dialog=Gtk.Dialog(_('Duplicate'),self.window2,0,(_("_OK"), Gtk.ResponseType.DELETE_EVENT))
+                dialog=Gtk.Dialog(title=_('Duplicate'),transient_for=self.window2,flags=0)
+                dialog.add_buttons(_("_OK"), Gtk.ResponseType.DELETE_EVENT)
                 dialog.set_icon_from_file(cfg.iconWindow)           
                 dialog.connect("response", lambda w,e: dialog.destroy())                
                 dialog.connect("close", lambda w,e: dialog.destroy())
@@ -9698,7 +10405,8 @@ class mainWindow:
                 dialog.show_all()               
                 return
         #ask for confirmation
-        dialog=Gtk.Dialog(_('Question'),self.window2,0,(_("_Cancel"), Gtk.ResponseType.REJECT, _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog=Gtk.Dialog(title=_('Question'),transient_for=self.window2,flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT, _("_OK"), Gtk.ResponseType.ACCEPT)
         dialog.set_destroy_with_parent(True)
         dialog.set_icon_from_file(cfg.iconWindow)
         dialog.connect("close", lambda w,e: dialog.destroy())

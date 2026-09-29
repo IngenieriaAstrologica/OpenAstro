@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "wsl --cd \"$CLAUDE_PROJECT_DIR\" bash tests/lint/on_edit.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

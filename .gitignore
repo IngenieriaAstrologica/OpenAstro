@@ -44,10 +44,21 @@ old/
 
 # Local working files, deliberately out of the repo:
 #   AGENTS.md  agent coordination notes — contains absolute local paths
-#   TODO.md    pending-features roadmap (move it into the repo if the
-#              roadmap should be public; it carries no personal data)
+#   TODO.md    pending-features roadmap. Kept out because it quotes the
+#              reverse-engineering sources, including sample records from
+#              third-party files. The sample was anonymised on 2026-09-21,
+#              but check before ever moving this into the repo rather than
+#              trusting this line.
 #   README     leftover from upstream; the real one is README.md
 AGENTS.md
 TODO.md
 /README
-.claude/
+# Everything under .claude except the agent definitions and the hook wiring,
+# which are project documentation with nothing personal in them. Losing those
+# with a wiped .claude would mean rebuilding the setup from memory. Note the
+# pattern excludes the *contents*, not the directory: git does not descend
+# into an excluded directory, so `.claude/` plus a negation would not work.
+.claude/*
+!.claude/agents/
+!.claude/settings.json
+.claude/worktrees/
