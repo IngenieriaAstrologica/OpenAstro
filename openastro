@@ -26,9 +26,16 @@
 """
 
 #basics
-import math, sys, os.path, datetime, socket, gettext, codecs, webbrowser, csv, calendar
+import math, sys, os.path, datetime, socket, gettext, codecs, webbrowser, csv, calendar, warnings
 from zoneinfo import ZoneInfo  # stdlib time zones (Python 3.9+)
 #import geonames  # unused module import
+
+#Gtk.Table (including its set_col/row_spacing(s) helpers) is deprecated
+#wholesale in GTK 3 with no per-call replacement: silencing it takes a
+#Gtk.Grid rewrite of 127 .attach() calls, deferred as too risky (see
+#CHANGELOG). Filter that known noise so genuine warnings stay visible.
+warnings.filterwarnings("ignore", message=r"Gtk\.Table\.set_.*",
+                        category=DeprecationWarning)
 
 #copyfile
 from shutil import copyfile
@@ -247,19 +254,24 @@ LANGUAGES_LABEL={
 
 TDomain = os.path.join(DATADIR,'locale')
 LANGUAGES=list(LANGUAGES_LABEL.keys())
+#Default UI language: Spanish. Used when the system locale provides no
+#translation (e.g. LANG=C.UTF-8), when the user never chose a language,
+#and for fresh databases. (dprint is defined at the end of this file, so
+#the fallback below still uses print.)
+DEFAULT_LANGUAGE = "es"
 TRANSLATION={}
 for i in range(len(LANGUAGES)):
     try:
         TRANSLATION[LANGUAGES[i]] = gettext.translation("openastro",TDomain,languages=[LANGUAGES[i]])
     except IOError as err:
         print("IOError! Invalid languages specified (%s) in %s" %(LANGUAGES[i],TDomain))
-        TRANSLATION[LANGUAGES[i]] = gettext.translation("openastro",TDomain,languages=['en'])
+        TRANSLATION[LANGUAGES[i]] = gettext.translation("openastro",TDomain,languages=[DEFAULT_LANGUAGE])
         
 try:
     TRANSLATION["default"] = gettext.translation("openastro",TDomain)
 except IOError as err:
-    print("OpenAstro.org has not yet been translated in your language! Could not load translation...")
-    TRANSLATION["default"] = gettext.translation("openastro",TDomain,languages=['en'])
+    #silent fallback: Spanish is the default language (e.g. LANG=C.UTF-8)
+    TRANSLATION["default"] = gettext.translation("openastro",TDomain,languages=[DEFAULT_LANGUAGE])
 
 
 #config class
@@ -429,7 +441,7 @@ class openAstroSqlite:
                             "version":str(cfg.version),
                             "use_geonames.org":"0",
                             "houses_system":"P",
-                            "language":"default",
+                            "language":"es",
                             "postype":"geo",
                             "chartview":"traditional",
                             "zodiactype":"tropical",
@@ -446,7 +458,13 @@ class openAstroSqlite:
         for row in self.cursor:
             self.astrocfg[row['name']]=row['value'] 
 
-        #install language
+        #install language ("default" is kept as an alias of Spanish: it
+        #meant system-or-English in older versions and now resolves to
+        #DEFAULT_LANGUAGE so the UI never silently falls back to English)
+        if self.astrocfg.get('language') == "default":
+            sql='INSERT OR REPLACE INTO astrocfg (name,value) VALUES("language","es")'
+            self.cursor.execute(sql)
+            self.astrocfg['language'] = "es"
         self.setLanguage(self.astrocfg['language'])
         self.lang_label=LANGUAGES_LABEL
 
@@ -901,9 +919,9 @@ class openAstroSqlite:
         self.close()
 
     def setLanguage(self, lang=None):
-        if lang==None or lang=="default":           
-            TRANSLATION["default"].install()
-            dprint("installing default language")
+        if lang==None or lang=="default":
+            TRANSLATION[DEFAULT_LANGUAGE].install()
+            dprint("installing default language (%s)" % (DEFAULT_LANGUAGE,))
         else:
             TRANSLATION[lang].install()
             dprint("installing language (%s)"%(lang))
@@ -5483,11 +5501,11 @@ class mainWindow:
         return
 
     def tableMonthlyTimeline(self, widget):
-        dialog = Gtk.Dialog(_("Select Month"),
-                     self.window,
-                     0,
-                     (_("_Cancel"), Gtk.ResponseType.REJECT,
-                      _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog = Gtk.Dialog(title=_("Select Month"),
+                            transient_for=self.window,
+                            flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT,
+                           _("_OK"), Gtk.ResponseType.ACCEPT)
 
         dialog.set_destroy_with_parent(True)
         dialog.connect("destroy", lambda w: dialog.destroy())
@@ -6914,11 +6932,11 @@ class mainWindow:
         #before anything can be drawn, so this half only asks. The index is
         #mundane, not natal, but the chart's own year makes a sane default
         #centre and gets marked on the curve.
-        dialog = Gtk.Dialog(_("Cyclic Index"),
-                     self.window,
-                     0,
-                     (_("_Cancel"), Gtk.ResponseType.REJECT,
-                      _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog = Gtk.Dialog(title=_("Cyclic Index"),
+                            transient_for=self.window,
+                            flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT,
+                           _("_OK"), Gtk.ResponseType.ACCEPT)
         dialog.set_destroy_with_parent(True)
         dialog.connect("destroy", lambda w: dialog.destroy())
         dialog.set_size_request(240, 240)
@@ -7253,11 +7271,11 @@ class mainWindow:
         #range (openastromod/mundane.py). Dates never persist (every
         #technique dialog opens on the current moment, per CLAUDE.md); the
         #category checkboxes do, like Harmogram's reading mode.
-        dialog = Gtk.Dialog(_("Ingresses, Lunations, Eclipses"),
-                     self.window,
-                     0,
-                     (_("_Cancel"), Gtk.ResponseType.REJECT,
-                      _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog = Gtk.Dialog(title=_("Ingresses, Lunations, Eclipses"),
+                            transient_for=self.window,
+                            flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT,
+                           _("_OK"), Gtk.ResponseType.ACCEPT)
         dialog.set_destroy_with_parent(True)
         dialog.connect("destroy", lambda w: dialog.destroy())
         dialog.set_border_width(5)
@@ -7512,11 +7530,11 @@ class mainWindow:
         #across a window of days. Everything asked here is one of ARMON's
         #own `.DHQ` fields -- FCH the centre date, NDY the days, NDP the
         #samples per day, PRE/PEM which set is measured against which.
-        dialog = Gtk.Dialog(_("Harmogram"),
-                     self.window,
-                     0,
-                     (_("_Cancel"), Gtk.ResponseType.REJECT,
-                      _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog = Gtk.Dialog(title=_("Harmogram"),
+                            transient_for=self.window,
+                            flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT,
+                           _("_OK"), Gtk.ResponseType.ACCEPT)
         dialog.set_destroy_with_parent(True)
         dialog.connect("destroy", lambda w: dialog.destroy())
         dialog.set_border_width(5)
@@ -8091,7 +8109,8 @@ class mainWindow:
         return
 
     def aboutInfo(self, widget):
-        dialog=Gtk.Dialog('Info',self.window,0,(_("_OK"), Gtk.ResponseType.DELETE_EVENT))
+        dialog=Gtk.Dialog(title='Info',transient_for=self.window,flags=0)
+        dialog.add_buttons(_("_OK"), Gtk.ResponseType.DELETE_EVENT)
         dialog.set_icon_from_file(cfg.iconWindow)
         dialog.connect("response", lambda w,e: dialog.destroy())                
         dialog.connect("close", lambda w,e: dialog.destroy())
@@ -8438,7 +8457,8 @@ class mainWindow:
             if self.DB[i]["id"] == model.get_value(iter,3):
                 self.ODDlist = self.DB[i]
         name = self.ODDlist["name"]
-        dialog=Gtk.Dialog(_('Question'),self.win_OD,0,(_("_Cancel"), Gtk.ResponseType.REJECT, _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog=Gtk.Dialog(title=_('Question'),transient_for=self.win_OD,flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT, _("_OK"), Gtk.ResponseType.ACCEPT)
         dialog.set_destroy_with_parent(True)
         dialog.connect("close", lambda w,e: dialog.destroy())
         dialog.connect("response",self.openDatabaseDelDo)
@@ -8494,7 +8514,8 @@ class mainWindow:
         en = db.getDatabase()
         for i in range(len(en)):
             if en[i]["name"] == self.name.get_text() and self.oDE_list["id"] != en[i]["id"]:
-                dialog=Gtk.Dialog(_('Duplicate'),self.window2,0,(_("_OK"), Gtk.ResponseType.DELETE_EVENT))
+                dialog=Gtk.Dialog(title=_('Duplicate'),transient_for=self.window2,flags=0)
+                dialog.add_buttons(_("_OK"), Gtk.ResponseType.DELETE_EVENT)
                 dialog.set_icon_from_file(cfg.iconWindow)           
                 dialog.connect("response", lambda w,e: dialog.destroy())                
                 dialog.connect("close", lambda w,e: dialog.destroy())
@@ -8502,7 +8523,8 @@ class mainWindow:
                 dialog.show_all()               
                 return
         #ask for confirmation
-        dialog=Gtk.Dialog(_('Question'),self.window2,0,(_("_Cancel"), Gtk.ResponseType.REJECT, _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog=Gtk.Dialog(title=_('Question'),transient_for=self.window2,flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT, _("_OK"), Gtk.ResponseType.ACCEPT)
         dialog.set_destroy_with_parent(True)
         dialog.set_icon_from_file(cfg.iconWindow)
         dialog.connect("close", lambda w,e: dialog.destroy())
@@ -10374,7 +10396,8 @@ class mainWindow:
         en = db.getDatabase()
         for i in range(len(en)):
             if en[i]["name"] == self.name.get_text():
-                dialog=Gtk.Dialog(_('Duplicate'),self.window2,0,(_("_OK"), Gtk.ResponseType.DELETE_EVENT))
+                dialog=Gtk.Dialog(title=_('Duplicate'),transient_for=self.window2,flags=0)
+                dialog.add_buttons(_("_OK"), Gtk.ResponseType.DELETE_EVENT)
                 dialog.set_icon_from_file(cfg.iconWindow)           
                 dialog.connect("response", lambda w,e: dialog.destroy())                
                 dialog.connect("close", lambda w,e: dialog.destroy())
@@ -10382,7 +10405,8 @@ class mainWindow:
                 dialog.show_all()               
                 return
         #ask for confirmation
-        dialog=Gtk.Dialog(_('Question'),self.window2,0,(_("_Cancel"), Gtk.ResponseType.REJECT, _("_OK"), Gtk.ResponseType.ACCEPT))
+        dialog=Gtk.Dialog(title=_('Question'),transient_for=self.window2,flags=0)
+        dialog.add_buttons(_("_Cancel"), Gtk.ResponseType.REJECT, _("_OK"), Gtk.ResponseType.ACCEPT)
         dialog.set_destroy_with_parent(True)
         dialog.set_icon_from_file(cfg.iconWindow)
         dialog.connect("close", lambda w,e: dialog.destroy())

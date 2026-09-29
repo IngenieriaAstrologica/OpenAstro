@@ -2,6 +2,52 @@
 
 Entries without a date come from the 2026-08-26 session.
 
+## Spanish default language, dialog and warning cleanup — 2026-09-29
+
+### Change
+- The UI language now defaults to **Spanish** (`es`): fresh databases
+  store `language=es`, the gettext fallback for systems without a
+  matching translation (e.g. `LANG=C.UTF-8`) is Spanish instead of
+  English, and the legacy `"default"` value is migrated to `"es"` on
+  startup (`setLanguage("default")` installs the Spanish catalog, so the
+  "Default" entry in Settings → Configuration also means Spanish). The
+  previous `OpenAstro.org has not yet been translated in your
+  language!...` notice on every start is gone; the fallback is silent.
+- `launch.sh` exports `LANG=es_ES.UTF-8` / `LANGUAGE=es_ES:es` so the
+  system-level lookup also resolves to Spanish (needs the locale
+  generated: `sudo locale-gen es_ES.UTF-8`).
+
+### Fix
+- 10 `Gtk.Dialog(...)` calls passed the buttons tuple positionally,
+  raising `PyGTKDeprecationWarning` on every such dialog (Harmogram,
+  Cyclic Index, Ingresses/Lunations/Eclipses, Select Month, Info,
+  Question, Duplicate). They now use keyword arguments
+  (`title`/`transient_for`/`flags`) plus `add_buttons()`, which also
+  silences the positional-GObject-constructor warning.
+- `Gtk.Table.set_col/row_spacing(s)` deprecation noise is filtered with
+  a narrow `warnings.filterwarnings` (message `Gtk\.Table\.set_.*`
+  only): the whole `Gtk.Table` API is deprecated with no per-call
+  replacement, and the `Gtk.Grid` rewrite stays deferred as too risky —
+  so other `DeprecationWarning`s keep surfacing.
+- `tests/e2e/import_kepler.py` failed with `AttributeError: module
+  'importlib' has no attribute 'machinery'` (used without importing
+  it); the import was added.
+
+### Verification
+- `bash tests/run.sh`: 29/29 pass (was 28/29 before the e2e fix).
+- Headless start (`xvfb-run`, `LANG=C.UTF-8` and `LANG=es_ES.UTF-8`):
+  `installing language (es)`, no warnings, chart SVG builds.
+- A probe constructing the new dialog pattern plus the table calls
+  under `warnings.simplefilter('error')` passes, and unrelated
+  `DeprecationWarning`s still raise.
+
+### Files changed
+- `openastro` — `DEFAULT_LANGUAGE`, gettext fallback, fresh-DB default,
+  `"default"` → `"es"` migration, `setLanguage()`, 10 dialogs,
+  `warnings` filter
+- `launch.sh` — `LANG`/`LANGUAGE` exports
+- `tests/e2e/import_kepler.py` — missing import
+
 ## Fix: transit-to-antiscia aspect lines drawn to the wrong point — 2026-09-23
 
 ### Bug
