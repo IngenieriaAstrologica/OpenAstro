@@ -2,7 +2,7 @@
 """End to end: run openAstroInstance.importKepler for real and read the
 people database back, then recompute a chart from a stored row and check
 the UT it implies."""
-import os, sys, sqlite3, importlib.util, tempfile, shutil
+import os, sys, sqlite3, importlib.util, importlib.machinery, tempfile, shutil
 
 WT = os.environ.get("OA_ROOT") or os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
